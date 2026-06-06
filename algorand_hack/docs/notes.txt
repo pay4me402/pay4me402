@@ -1,0 +1,10 @@
+e-commerce
+402 protocol
+Algorand framework
+
+
+resources:
+https://dev.algorand.co/resources/x402-on-algorand/
+https://github.com/algorandfoundation/x402-demo
+https://www.x402.org/
+https://docs.google.com/document/d/1SQ7nuzOesmxFqmw705K-LjqoQkxNUkNdt7sQswfU-Bc/edit?tab=t.0
