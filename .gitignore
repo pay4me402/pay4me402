@@ -1,0 +1,6 @@
+bin/
+.env
+certs.json
+*.pem
+*.key
+.DS_Store

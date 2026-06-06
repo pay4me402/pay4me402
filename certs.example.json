@@ -1,0 +1,4 @@
+{
+  "caCert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+  "caKey": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+}
