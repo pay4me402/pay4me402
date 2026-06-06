@@ -1,0 +1,94 @@
+# networks:
+#   hacknet:
+#     driver: bridge
+
+services:
+  proxy:
+    image: ubuntu:24.04
+    working_dir: /app
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apt-get update
+        apt-get install -y ca-certificates
+        cp /app/bin/payformeproxy /tmp/payformeproxy
+        chmod +x /tmp/payformeproxy
+        exec /tmp/payformeproxy
+    env_file:
+      - .env
+    environment:
+      PROXY_ADDR: :8089
+      CA_CERT_FILE: /certs/payformeproxy-ca.crt
+      CA_KEY_FILE: /certs/payformeproxy-ca.key
+    ports:
+      - "8089:8089"
+    volumes:
+      - ../../bin/payformeproxy:/app/bin/payformeproxy:ro
+      - ../../certs/payformeproxy-ca.crt:/certs/payformeproxy-ca.crt:ro
+      - ../../certs/payformeproxy-ca.key:/certs/payformeproxy-ca.key:ro
+
+    # networks:
+    #   - hacknet
+
+  client:
+    image: ubuntu:24.04
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apt-get update
+        apt-get install -y ca-certificates curl
+        test -f /certs/payformeproxy-ca.crt
+        cp /certs/payformeproxy-ca.crt /usr/local/share/ca-certificates/payformeproxy-ca.crt
+        update-ca-certificates
+        sleep infinity
+    environment:
+      HTTP_PROXY: http://proxy:8089
+      HTTPS_PROXY: http://proxy:8089
+      NO_PROXY: localhost,127.0.0.1
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/payformeproxy-ca.crt
+    depends_on:
+      - proxy
+    volumes:
+      - ./certs/payformeproxy-ca.crt:/certs/payformeproxy-ca.crt:ro
+    # networks:
+    #   - hacknet
+  
+
+
+
+  opencode:
+    image: ubuntu:24.04
+    depends_on:
+      - proxy
+    container_name: opencode
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        apt-get update
+        apt-get install -y ca-certificates curl bash
+        test -f /certs/payformeproxy-ca.crt
+        cp /certs/payformeproxy-ca.crt /usr/local/share/ca-certificates/payformeproxy-ca.crt
+        update-ca-certificates
+        curl -fsSL https://opencode.ai/install | bash
+        exec /root/.opencode/bin/opencode serve --hostname 0.0.0.0 --port 9000
+    ports:
+      - '9000:9000'
+    environment:
+      HTTP_PROXY: http://proxy:8089
+      HTTPS_PROXY: http://proxy:8089
+      NO_PROXY: localhost,127.0.0.1
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      NODE_EXTRA_CA_CERTS: /usr/local/share/ca-certificates/payformeproxy-ca.crt
+    volumes:
+      - ./certs/payformeproxy-ca.crt:/certs/payformeproxy-ca.crt:ro
+    # networks:
+    #   - hacknet
