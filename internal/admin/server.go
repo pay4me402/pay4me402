@@ -93,12 +93,12 @@ const usersPage = `<!doctype html>
     <button type="submit">Add user</button>
   </form>
   <table>
-    <thead><tr><th>Username</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Username</th><th>Created</th><th>Actions</th></tr></thead>
     <tbody>
       {{range .Users}}
       <tr>
         <td>{{.Username}}</td>
-        <td>{{if .CreatedAt.Valid}}{{.CreatedAt.Time}}{{end}}</td>
+        <td>{{.CreatedAt}}</td>
         <td>
           <form method="post" action="/users/delete">
             <input type="hidden" name="id" value="{{.ID}}">
