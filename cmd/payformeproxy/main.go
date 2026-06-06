@@ -14,8 +14,9 @@ func main() {
 	}
 
 	server, err := proxy.New(proxy.Config{
-		Addr:         env.Get("PROXY_ADDR", ":8089"),
-		CAConfigPath: env.Get("CA_CONFIG", "certs.json"),
+		Addr:      env.Get("PROXY_ADDR", ":8089"),
+		CertPath:  env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt"),
+		CAKeyPath: env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
 	})
 	if err != nil {
 		log.Fatal(err)

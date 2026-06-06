@@ -3,7 +3,6 @@ package proxy
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,8 +15,9 @@ import (
 )
 
 type Config struct {
-	Addr         string
-	CAConfigPath string
+	Addr      string
+	CertPath  string
+	CAKeyPath string
 }
 
 type Server struct {
@@ -25,18 +25,13 @@ type Server struct {
 	handler http.Handler
 }
 
-type caConfig struct {
-	CACert string `json:"caCert"`
-	CAKey  string `json:"caKey"`
-}
-
 func New(config Config) (*Server, error) {
-	ca, err := loadCAConfig(config.CAConfigPath)
+	certPEM, keyPEM, err := loadCAFiles(config.CertPath, config.CAKeyPath)
 	if err != nil {
 		return nil, err
 	}
 
-	cert, err := parseCA([]byte(ca.CACert), []byte(ca.CAKey))
+	cert, err := parseCA(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}
@@ -112,18 +107,18 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string) (*http.Respons
 	return paidResp, nil
 }
 
-func loadCAConfig(path string) (*caConfig, error) {
-	data, err := os.ReadFile(path)
+func loadCAFiles(certPath string, keyPath string) ([]byte, []byte, error) {
+	cert, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("read CA cert file: %w", err)
 	}
 
-	var ca caConfig
-	if err := json.Unmarshal(data, &ca); err != nil {
-		return nil, err
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read CA key file: %w", err)
 	}
 
-	return &ca, nil
+	return cert, key, nil
 }
 
 func parseCA(caCert, caKey []byte) (*tls.Certificate, error) {

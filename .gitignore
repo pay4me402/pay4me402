@@ -1,6 +1,7 @@
 bin/
 .env
 certs.json
+certs/
 *.pem
 *.key
 .DS_Store
