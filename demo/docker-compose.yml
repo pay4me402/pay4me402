@@ -1,0 +1,19 @@
+services:
+  proxy:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8089:8089"
+
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode
+    environment:
+      HTTP_PROXY: http://proxy:8089
+      HTTPS_PROXY: http://proxy:8089
+    ports:
+      - "9000:9000"
+    depends_on:
+      - proxy
