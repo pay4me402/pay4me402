@@ -15,3 +15,12 @@ type ProxyUser struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
+
+type Wallet struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Chain      string    `json:"chain"`
+	PrivateKey string    `json:"private_key"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
