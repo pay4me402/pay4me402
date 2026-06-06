@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log"
 	"os"
 
+	"github.com/majed/payformeproxy/internal/admin"
+	"github.com/majed/payformeproxy/internal/db"
 	"github.com/majed/payformeproxy/internal/env"
 	"github.com/majed/payformeproxy/internal/proxy"
+	"github.com/majed/payformeproxy/internal/users"
+	_ "modernc.org/sqlite"
 )
 
 func main() {
@@ -13,10 +19,29 @@ func main() {
 		log.Fatal(err)
 	}
 
+	database, err := sql.Open("sqlite", env.Get("DATABASE_URL", "payformeproxy.db"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer database.Close()
+	if err := db.Migrate(context.Background(), database); err != nil {
+		log.Fatal(err)
+	}
+
+	userService := users.NewService(db.New(database))
+	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService)
+	go func() {
+		log.Printf("payformeproxy admin listening on %s", adminServer.Addr())
+		if err := adminServer.ListenAndServe(); err != nil {
+			log.Println(err)
+		}
+	}()
+
 	server, err := proxy.New(proxy.Config{
-		Addr:      env.Get("PROXY_ADDR", ":8089"),
-		CertPath:  env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt"),
-		CAKeyPath: env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
+		Addr:          env.Get("PROXY_ADDR", ":8089"),
+		CertPath:      env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt"),
+		CAKeyPath:     env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
+		Authenticator: userService,
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -15,9 +17,14 @@ import (
 )
 
 type Config struct {
-	Addr      string
-	CertPath  string
-	CAKeyPath string
+	Addr          string
+	CertPath      string
+	CAKeyPath     string
+	Authenticator Authenticator
+}
+
+type Authenticator interface {
+	Authenticate(context.Context, string, string) (bool, error)
 }
 
 type Server struct {
@@ -41,9 +48,18 @@ func New(config Config) (*Server, error) {
 
 	mitm := &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: goproxy.TLSConfigFromCA(cert)}
 	var alwaysMITM goproxy.FuncHttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
+		if !authorized(ctx.Req, ctx, config.Authenticator) {
+			return rejectConnect(), host
+		}
 		return mitm, host
 	}
 	proxy.OnRequest().HandleConnect(alwaysMITM)
+	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		if !authorized(req, ctx, config.Authenticator) {
+			return req, proxyAuthRequired(req)
+		}
+		return req, nil
+	})
 
 	proxy.OnResponse(goproxy.StatusCodeIs(http.StatusPaymentRequired)).DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
@@ -66,6 +82,58 @@ func (s *Server) Addr() string {
 
 func (s *Server) ListenAndServe() error {
 	return http.ListenAndServe(s.addr, s.handler)
+}
+
+func authorized(req *http.Request, ctx *goproxy.ProxyCtx, authenticator Authenticator) bool {
+	if authenticator == nil {
+		return true
+	}
+	username, password, ok := req.BasicAuth()
+	if !ok {
+		username, password, ok = parseBasicAuth(req.Header.Get("Proxy-Authorization"))
+	}
+	if !ok {
+		return false
+	}
+	valid, err := authenticator.Authenticate(req.Context(), username, password)
+	if err != nil {
+		ctx.Warnf("proxy authentication error: %v", err)
+		return false
+	}
+	return valid
+}
+
+func parseBasicAuth(header string) (string, string, bool) {
+	const prefix = "Basic "
+	if len(header) < len(prefix) || header[:len(prefix)] != prefix {
+		return "", "", false
+	}
+	req := &http.Request{Header: http.Header{"Authorization": []string{header}}}
+	return req.BasicAuth()
+}
+
+func proxyAuthRequired(req *http.Request) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusProxyAuthRequired,
+		Status:     "407 Proxy Authentication Required",
+		Header: http.Header{
+			"Proxy-Authenticate": []string{`Basic realm="payformeproxy"`},
+			"Content-Type":       []string{"text/plain; charset=utf-8"},
+		},
+		Body:          http.NoBody,
+		ContentLength: 0,
+		Request:       req,
+	}
+}
+
+func rejectConnect() *goproxy.ConnectAction {
+	return &goproxy.ConnectAction{
+		Action: goproxy.ConnectHijack,
+		Hijack: func(req *http.Request, client net.Conn, ctx *goproxy.ProxyCtx) {
+			_, _ = client.Write([]byte("HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"payformeproxy\"\r\nContent-Length: 0\r\n\r\n"))
+			_ = client.Close()
+		},
+	}
 }
 
 func payAndRetry(req *http.Request, paymentRequiredHeader string) (*http.Response, error) {
