@@ -55,6 +55,9 @@ func New(config Config) (*Server, error) {
 	}
 	proxy.OnRequest().HandleConnect(alwaysMITM)
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		if isMITMRequest(req) {
+			return req, nil
+		}
 		if !authorized(req, ctx, config.Authenticator) {
 			return req, proxyAuthRequired(req)
 		}
@@ -101,6 +104,10 @@ func authorized(req *http.Request, ctx *goproxy.ProxyCtx, authenticator Authenti
 		return false
 	}
 	return valid
+}
+
+func isMITMRequest(req *http.Request) bool {
+	return req.URL != nil && req.URL.Scheme == "https" && req.Header.Get("Proxy-Authorization") == ""
 }
 
 func parseBasicAuth(header string) (string, string, bool) {
