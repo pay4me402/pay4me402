@@ -89,7 +89,7 @@ func (s *Server) ListenAndServe() error {
 
 func authorized(req *http.Request, ctx *goproxy.ProxyCtx, authenticator Authenticator) bool {
 	if authenticator == nil {
-		return true
+		return false
 	}
 	username, password, ok := req.BasicAuth()
 	if !ok {
