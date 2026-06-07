@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -22,16 +23,18 @@ type Server struct {
 	wallets     *wallets.Service
 	userWallets *userwallets.Service
 	queries     *db.Queries
+	certPath    string
 	template    *template.Template
 }
 
-func New(addr string, users *users.Service, wallets *wallets.Service, userWallets *userwallets.Service, queries *db.Queries) *Server {
+func New(addr string, users *users.Service, wallets *wallets.Service, userWallets *userwallets.Service, queries *db.Queries, certPath string) *Server {
 	return &Server{
 		addr:        addr,
 		users:       users,
 		wallets:     wallets,
 		userWallets: userWallets,
 		queries:     queries,
+		certPath:    certPath,
 		template: template.Must(template.New("users").Funcs(template.FuncMap{
 			"monthlyBudget": formatMonthlyBudget,
 			"budgetValue":   budgetValue,
@@ -47,6 +50,7 @@ func (s *Server) Addr() string {
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.listUsers)
+	mux.HandleFunc("GET /ca.crt", s.serveCACert)
 	mux.HandleFunc("POST /users", s.createUser)
 	mux.HandleFunc("POST /users/delete", s.deleteUser)
 	mux.HandleFunc("POST /wallets", s.createWallet)
@@ -55,6 +59,20 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("POST /user-wallets/budget", s.updateUserWalletBudget)
 	mux.HandleFunc("POST /user-wallets/delete", s.deleteUserWallet)
 	return http.ListenAndServe(s.addr, mux)
+}
+
+func (s *Server) serveCACert(w http.ResponseWriter, r *http.Request) {
+	cert, err := os.ReadFile(s.certPath)
+	if err != nil {
+		http.Error(w, "CA certificate not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+	w.Header().Set("Content-Disposition", `attachment; filename="payformeproxy-ca.crt"`)
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(cert); err != nil {
+		log.Printf("serve CA cert: %v", err)
+	}
 }
 
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {

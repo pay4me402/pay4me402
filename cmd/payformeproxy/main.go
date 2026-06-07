@@ -34,7 +34,8 @@ func main() {
 	userService := users.NewService(queries)
 	walletService := wallets.NewService(queries)
 	userWalletService := userwallets.NewService(queries)
-	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService, walletService, userWalletService, queries)
+	certPath := env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt")
+	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService, walletService, userWalletService, queries, certPath)
 	go func() {
 		log.Printf("payformeproxy admin listening on %s", adminServer.Addr())
 		if err := adminServer.ListenAndServe(); err != nil {
@@ -44,7 +45,7 @@ func main() {
 
 	server, err := proxy.New(proxy.Config{
 		Addr:          env.Get("PROXY_ADDR", ":8089"),
-		CertPath:      env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt"),
+		CertPath:      certPath,
 		CAKeyPath:     env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
 		Authenticator: userService,
 		Wallets:       walletService,
