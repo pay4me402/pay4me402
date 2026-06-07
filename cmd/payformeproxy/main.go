@@ -46,6 +46,7 @@ func main() {
 		CAKeyPath:     env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
 		Authenticator: userService,
 		Wallets:       walletService,
+		Transactions:  queries,
 	})
 	if err != nil {
 		log.Fatal(err)

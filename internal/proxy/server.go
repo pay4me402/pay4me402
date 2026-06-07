@@ -2,18 +2,24 @@ package proxy
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/elazarl/goproxy"
 	"github.com/majed/payformeproxy/internal/algorand"
+	"github.com/majed/payformeproxy/internal/db"
 	pfsolana "github.com/majed/payformeproxy/internal/solana"
 	"github.com/majed/payformeproxy/internal/wallets"
 	"github.com/majed/payformeproxy/internal/x402"
@@ -25,15 +31,32 @@ type Config struct {
 	CAKeyPath     string
 	Authenticator Authenticator
 	Wallets       WalletProvider
+	Transactions  TransactionRecorder
 }
 
 type Authenticator interface {
 	Authenticate(context.Context, string, string) (bool, error)
 }
 
+type UserAuthenticator interface {
+	AuthenticateUser(context.Context, string, string) (db.ProxyUser, error)
+}
+
 type WalletProvider interface {
 	PrivateKeyForChain(context.Context, string) (string, error)
 }
+
+type WalletSelector interface {
+	WalletForChain(context.Context, string) (db.Wallet, error)
+}
+
+type TransactionRecorder interface {
+	CreateTransaction(context.Context, db.CreateTransactionParams) (db.Transaction, error)
+}
+
+type contextKey string
+
+const userContextKey contextKey = "proxy_user"
 
 type Server struct {
 	addr    string
@@ -56,25 +79,32 @@ func New(config Config) (*Server, error) {
 
 	mitm := &goproxy.ConnectAction{Action: goproxy.ConnectMitm, TLSConfig: goproxy.TLSConfigFromCA(cert)}
 	var alwaysMITM goproxy.FuncHttpsHandler = func(host string, ctx *goproxy.ProxyCtx) (*goproxy.ConnectAction, string) {
-		if !authorized(ctx.Req, ctx, config.Authenticator) {
+		user, ok := authenticate(ctx.Req, ctx, config.Authenticator)
+		if !ok {
 			return rejectConnect(), host
 		}
+		ctx.UserData = user
 		return mitm, host
 	}
 	proxy.OnRequest().HandleConnect(alwaysMITM)
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 		if isMITMRequest(req) {
+			if user, ok := ctx.UserData.(db.ProxyUser); ok && user.ID != "" {
+				req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+			}
 			return req, nil
 		}
-		if !authorized(req, ctx, config.Authenticator) {
+		user, ok := authenticate(req, ctx, config.Authenticator)
+		if !ok {
 			return req, proxyAuthRequired(req)
 		}
+		req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
 		return req, nil
 	})
 
 	proxy.OnResponse(goproxy.StatusCodeIs(http.StatusPaymentRequired)).DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"), config.Wallets)
+			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"), config.Wallets, config.Transactions)
 			if err != nil {
 				ctx.Warnf("error handling 402 payment: %v", err)
 				return resp
@@ -95,23 +125,34 @@ func (s *Server) ListenAndServe() error {
 	return http.ListenAndServe(s.addr, s.handler)
 }
 
-func authorized(req *http.Request, ctx *goproxy.ProxyCtx, authenticator Authenticator) bool {
+func authenticate(req *http.Request, ctx *goproxy.ProxyCtx, authenticator Authenticator) (db.ProxyUser, bool) {
 	if authenticator == nil {
-		return false
+		return db.ProxyUser{}, false
 	}
 	username, password, ok := req.BasicAuth()
 	if !ok {
 		username, password, ok = parseBasicAuth(req.Header.Get("Proxy-Authorization"))
 	}
 	if !ok {
-		return false
+		return db.ProxyUser{}, false
+	}
+	if userAuthenticator, ok := authenticator.(UserAuthenticator); ok {
+		user, err := userAuthenticator.AuthenticateUser(req.Context(), username, password)
+		if err != nil {
+			ctx.Warnf("proxy authentication error: %v", err)
+			return db.ProxyUser{}, false
+		}
+		return user, user.ID != ""
 	}
 	valid, err := authenticator.Authenticate(req.Context(), username, password)
 	if err != nil {
 		ctx.Warnf("proxy authentication error: %v", err)
-		return false
+		return db.ProxyUser{}, false
 	}
-	return valid
+	if !valid {
+		return db.ProxyUser{}, false
+	}
+	return db.ProxyUser{ID: username, Username: username}, true
 }
 
 func isMITMRequest(req *http.Request) bool {
@@ -151,7 +192,7 @@ func rejectConnect() *goproxy.ConnectAction {
 	}
 }
 
-func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider WalletProvider) (*http.Response, error) {
+func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider WalletProvider, transactionRecorder TransactionRecorder) (*http.Response, error) {
 	challenge, err := x402.DecodePaymentRequired(paymentRequiredHeader)
 	if err != nil {
 		return nil, err
@@ -161,12 +202,12 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, errors.New("wallet provider is not configured")
 	}
 
-	accepted, chain, privateKey, err := selectPayment(req.Context(), challenge, walletProvider)
+	accepted, chain, wallet, err := selectPayment(req.Context(), challenge, walletProvider)
 	if err != nil {
 		return nil, err
 	}
 
-	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, privateKey)
+	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, wallet.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -181,15 +222,24 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, err
 	}
 
-	log.Printf("%s payment transaction: %s", chain, txID)
 	if paymentResponse := paidResp.Header.Get("PAYMENT-RESPONSE"); paymentResponse != "" {
-		log.Printf("PAYMENT-RESPONSE: %s", paymentResponse)
+		logPaymentResponse(chain, paymentResponse)
+	} else if txID != "" {
+		log.Printf("%s payment transaction prepared: %s", chain, txID)
+	} else {
+		log.Printf("%s payment retry completed with status: %s", chain, paidResp.Status)
+	}
+
+	if paidResp.StatusCode >= 200 && paidResp.StatusCode < 300 {
+		if err := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount); err != nil {
+			log.Printf("record payment transaction: %v", err)
+		}
 	}
 
 	return paidResp, nil
 }
 
-func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider WalletProvider) (x402.PaymentOption, string, string, error) {
+func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider WalletProvider) (x402.PaymentOption, string, db.Wallet, error) {
 	var supportedChains []string
 	for _, option := range challenge.Accepts {
 		chain, ok := paymentChain(option)
@@ -197,18 +247,32 @@ func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider
 			continue
 		}
 		supportedChains = append(supportedChains, chain)
-		privateKey, err := walletProvider.PrivateKeyForChain(ctx, chain)
+		wallet, err := walletForChain(ctx, walletProvider, chain)
 		if err != nil {
-			return x402.PaymentOption{}, "", "", err
+			return x402.PaymentOption{}, "", db.Wallet{}, err
 		}
-		if privateKey != "" {
-			return option, chain, privateKey, nil
+		if wallet.PrivateKey != "" {
+			return option, chain, wallet, nil
 		}
 	}
 	if len(supportedChains) == 0 {
-		return x402.PaymentOption{}, "", "", errors.New("Payment-Required header did not include a supported exact payment option")
+		return x402.PaymentOption{}, "", db.Wallet{}, errors.New("Payment-Required header did not include a supported exact payment option")
 	}
-	return x402.PaymentOption{}, "", "", fmt.Errorf("create a wallet for one of the accepted payment chains: %v", supportedChains)
+	return x402.PaymentOption{}, "", db.Wallet{}, fmt.Errorf("create a wallet for one of the accepted payment chains: %v", supportedChains)
+}
+
+func walletForChain(ctx context.Context, walletProvider WalletProvider, chain string) (db.Wallet, error) {
+	if selector, ok := walletProvider.(WalletSelector); ok {
+		return selector.WalletForChain(ctx, chain)
+	}
+	privateKey, err := walletProvider.PrivateKeyForChain(ctx, chain)
+	if err != nil {
+		return db.Wallet{}, err
+	}
+	if privateKey == "" {
+		return db.Wallet{}, nil
+	}
+	return db.Wallet{ID: chain, Chain: chain, PrivateKey: privateKey}, nil
 }
 
 func paymentChain(option x402.PaymentOption) (string, bool) {
@@ -234,6 +298,74 @@ func buildPaymentSignature(ctx context.Context, challenge x402.Challenge, accept
 	default:
 		return "", "", fmt.Errorf("unsupported payment chain %q", chain)
 	}
+}
+
+func recordTransaction(ctx context.Context, recorder TransactionRecorder, walletID string, resource string, amountValue string) error {
+	if recorder == nil {
+		return nil
+	}
+	user, ok := ctx.Value(userContextKey).(db.ProxyUser)
+	if !ok || user.ID == "" {
+		return errors.New("authenticated proxy user is missing from request context")
+	}
+	amount, err := parsePaymentAmount(amountValue)
+	if err != nil {
+		return err
+	}
+	_, err = recorder.CreateTransaction(ctx, db.CreateTransactionParams{
+		ID:       newID(),
+		UserID:   user.ID,
+		WalletID: walletID,
+		Resource: resource,
+		Amount:   amount,
+	})
+	return err
+}
+
+func parsePaymentAmount(value string) (int64, error) {
+	amount, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse payment amount for transaction record: %w", err)
+	}
+	return amount, nil
+}
+
+func newID() string {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(raw)
+}
+
+type paymentResponseLog struct {
+	Success     bool    `json:"success"`
+	Transaction string  `json:"transaction"`
+	Network     string  `json:"network"`
+	Payer       string  `json:"payer"`
+	ErrorReason *string `json:"errorReason"`
+}
+
+func logPaymentResponse(chain string, encoded string) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		log.Printf("%s payment response received", chain)
+		return
+	}
+	var response paymentResponseLog
+	if err := json.Unmarshal(raw, &response); err != nil {
+		log.Printf("%s payment response received", chain)
+		return
+	}
+	if response.Success {
+		log.Printf("%s payment settled: transaction=%s network=%s payer=%s", chain, response.Transaction, response.Network, response.Payer)
+		return
+	}
+	if response.ErrorReason != nil && *response.ErrorReason != "" {
+		log.Printf("%s payment settlement failed: %s", chain, *response.ErrorReason)
+		return
+	}
+	log.Printf("%s payment settlement failed", chain)
 }
 
 func loadCAFiles(certPath string, keyPath string) ([]byte, []byte, error) {

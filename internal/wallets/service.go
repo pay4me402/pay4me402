@@ -53,14 +53,25 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 }
 
 func (s *Service) PrivateKeyForChain(ctx context.Context, chain string) (string, error) {
-	wallet, err := s.queries.GetWalletByChain(ctx, chain)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
+	wallet, err := s.WalletForChain(ctx, chain)
 	if err != nil {
 		return "", err
 	}
+	if wallet.ID == "" {
+		return "", nil
+	}
 	return wallet.PrivateKey, nil
+}
+
+func (s *Service) WalletForChain(ctx context.Context, chain string) (db.Wallet, error) {
+	wallet, err := s.queries.GetWalletByChain(ctx, chain)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.Wallet{}, nil
+	}
+	if err != nil {
+		return db.Wallet{}, err
+	}
+	return wallet, nil
 }
 
 func newID() string {
