@@ -1,0 +1,15 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="shell">
+  <section class="hero card">
+    <div><p class="eyebrow">overview</p><h1>Admin dashboard</h1><p class="muted">Monitor the core payformeproxy resources from separate focused pages.</p></div>
+    <span class="status">Operational</span>
+  </section>
+  <section class="summary-grid">
+    <a class="summary-card card" href="/users"><span>Users</span><strong>{{len .Users}}</strong><small>Proxy identities</small></a>
+    <a class="summary-card card" href="/wallets"><span>Wallets</span><strong>{{len .Wallets}}</strong><small>Chain wallets</small></a>
+    <a class="summary-card card" href="/access"><span>Access rules</span><strong>{{len .UserWallets}}</strong><small>User wallet assignments</small></a>
+    <a class="summary-card card" href="/transactions"><span>Transactions</span><strong>{{len .Transactions}}</strong><small>Filtered ledger entries</small></a>
+  </section>
+</main>
+{{template "footer" .}}

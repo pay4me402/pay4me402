@@ -1,0 +1,18 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="shell">
+  <section class="card section">
+    <div class="section-head"><div><p class="eyebrow">routing</p><h1>Wallets</h1></div></div>
+    <form class="form-grid wallet-form" method="post" action="/wallets">
+      <input name="name" placeholder="wallet name" required>
+      <select id="wallet-chain" name="chain" required><option value="algorand">algorand</option><option value="solana">solana</option></select>
+      <select id="wallet-rpc-endpoint" name="rpc_endpoint"><option value="">Default for selected chain</option></select>
+      <input id="custom-rpc-endpoint" name="custom_rpc_endpoint" placeholder="custom RPC endpoint URL">
+      <input name="rpc_token" type="password" placeholder="RPC token (optional)">
+      <input name="private_key" type="password" placeholder="private key / mnemonic" required>
+      <button class="primary" type="submit">Add wallet</button>
+    </form>
+    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Chain</th><th>RPC Endpoint</th><th>Created</th><th>Actions</th></tr></thead><tbody>{{range .Wallets}}<tr><td><strong>{{.Name}}</strong></td><td><span class="badge">{{.Chain}}</span></td><td class="resource">{{.RpcEndpoint}}</td><td>{{.CreatedAt}}</td><td><form method="post" action="/wallets/delete"><input type="hidden" name="id" value="{{.ID}}"><button class="danger" type="submit">Delete</button></form></td></tr>{{else}}<tr><td colspan="5" class="empty">No wallets yet.</td></tr>{{end}}</tbody></table></div>
+  </section>
+</main>
+{{template "footer" .}}

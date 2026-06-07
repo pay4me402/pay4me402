@@ -1,0 +1,16 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="auth-shell">
+  <section class="card auth-card">
+    <p class="eyebrow">secure area</p>
+    <h1>Admin login</h1>
+    <p class="muted">Sign in to manage users, wallets, access rules, and transaction history.</p>
+    {{if .Error}}<div class="alert">{{.Error}}</div>{{end}}
+    <form class="stack" method="post" action="/login">
+      <label>Username<input name="username" autocomplete="username" required autofocus></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Login</button>
+    </form>
+  </section>
+</main>
+{{template "footer" .}}
