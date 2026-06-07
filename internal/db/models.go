@@ -5,6 +5,7 @@
 package db
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -23,6 +24,15 @@ type Transaction struct {
 	Resource  string    `json:"resource"`
 	Amount    float64   `json:"amount"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type UserWallet struct {
+	ID          string          `json:"id"`
+	UserID      string          `json:"user_id"`
+	WalletID    string          `json:"wallet_id"`
+	LimitAmount sql.NullFloat64 `json:"limit_amount"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 type Wallet struct {
