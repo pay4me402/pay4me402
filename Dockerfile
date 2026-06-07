@@ -1,7 +1,7 @@
 # ==============================================================================
 # STAGE 1: Builder (Build & Key Generation)
 # ==============================================================================
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build-time tools for SSL key generation and JSON formatting
 RUN apk add --no-cache openssl 
@@ -16,7 +16,7 @@ RUN mkdir -p certs && \
     openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
       -keyout certs/payformeproxy-ca.key \
       -out certs/payformeproxy-ca.crt \
-      -subj "/C=UK/ST=London/L=London/O=402Proxy/OU=402Proxy/CN=pay402me.com"
+      -subj "/C=UK/ST=London/L=London/O=402Proxy/OU=402Proxy/CN=proxy.pay402me.com"
 
 # 2. Build Go application
 COPY go.mod go.sum ./
