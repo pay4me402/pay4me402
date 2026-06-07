@@ -1,0 +1,15 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="shell">
+  <section class="card section">
+    <div class="section-head"><div><p class="eyebrow">ledger</p><h1>Transactions</h1></div></div>
+    <form class="form-grid" method="get" action="/transactions">
+      <select name="user_id"><option value="">All users</option>{{range .Users}}<option value="{{.ID}}" {{if eq $.SelectedUserID .ID}}selected{{end}}>{{.Username}}</option>{{end}}</select>
+      <select name="wallet_id"><option value="">All wallets</option>{{range .Wallets}}<option value="{{.ID}}" {{if eq $.SelectedWalletID .ID}}selected{{end}}>{{.Name}} ({{.Chain}})</option>{{end}}</select>
+      <select name="resource_base_url"><option value="">All resource base URLs</option>{{range .ResourceBaseURLs}}<option value="{{.}}" {{if eq $.SelectedResource .}}selected{{end}}>{{.}}</option>{{end}}</select>
+      <button class="primary" type="submit">Filter</button><a class="button secondary" href="/transactions">Clear</a>
+    </form>
+    <div class="table-wrap"><table><thead><tr><th>User</th><th>Wallet</th><th>Amount</th><th>Status</th><th>Resource</th><th>Created</th></tr></thead><tbody>{{range .Transactions}}<tr><td>{{index $.UsernamesByID .UserID}}</td><td>{{index $.WalletNamesByID .WalletID}}</td><td><strong>{{.Amount}}</strong></td><td><span class="badge transaction-status status-{{statusClass .Status}}">{{.Status}}</span></td><td class="resource">{{.Resource}}</td><td>{{.CreatedAt}}</td></tr>{{else}}<tr><td colspan="6" class="empty">No transactions found.</td></tr>{{end}}</tbody></table></div>
+  </section>
+</main>
+{{template "footer" .}}

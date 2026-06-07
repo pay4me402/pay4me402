@@ -1,0 +1,36 @@
+{{define "head"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · PayForMe Proxy</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+{{end}}
+
+{{define "navbar"}}
+<header class="navbar">
+  <a class="brand" href="/">PayForMe <span>Admin</span></a>
+  {{if .Authenticated}}
+  <nav class="nav-links">
+    <a class="{{if eq .Active "dashboard"}}active{{end}}" href="/">Dashboard</a>
+    <a class="{{if eq .Active "users"}}active{{end}}" href="/users">Users</a>
+    <a class="{{if eq .Active "wallets"}}active{{end}}" href="/wallets">Wallets</a>
+    <a class="{{if eq .Active "access"}}active{{end}}" href="/access">Access</a>
+    <a class="{{if eq .Active "transactions"}}active{{end}}" href="/transactions">Transactions</a>
+  </nav>
+  {{end}}
+  <div class="nav-actions">
+    <a class="button secondary" href="/ca.crt">Download certificate</a>
+    {{if .Authenticated}}<form method="post" action="/logout"><button type="submit">Logout</button></form>{{end}}
+  </div>
+</header>
+{{end}}
+
+{{define "footer"}}
+<script src="/static/admin.js"></script>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,14 @@
+{{template "head" .}}
+{{template "navbar" .}}
+<main class="shell">
+  <section class="card section">
+    <div class="section-head"><div><p class="eyebrow">identity</p><h1>Users</h1></div></div>
+    <form class="form-grid" method="post" action="/users">
+      <input name="username" placeholder="username" required>
+      <input name="password" type="password" placeholder="password" required>
+      <button class="primary" type="submit">Add user</button>
+    </form>
+    <div class="table-wrap"><table><thead><tr><th>Username</th><th>Created</th><th>Actions</th></tr></thead><tbody>{{range .Users}}<tr><td><strong>{{.Username}}</strong></td><td>{{.CreatedAt}}</td><td><form method="post" action="/users/delete"><input type="hidden" name="id" value="{{.ID}}"><button class="danger" type="submit">Delete</button></form></td></tr>{{else}}<tr><td colspan="3" class="empty">No users yet.</td></tr>{{end}}</tbody></table></div>
+  </section>
+</main>
+{{template "footer" .}}
