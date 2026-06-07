@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"crypto/subtle"
 	"database/sql"
 	"html/template"
 	"log"
@@ -24,10 +25,12 @@ type Server struct {
 	userWallets *userwallets.Service
 	queries     *db.Queries
 	certPath    string
+	adminUser   string
+	adminPass   string
 	template    *template.Template
 }
 
-func New(addr string, users *users.Service, wallets *wallets.Service, userWallets *userwallets.Service, queries *db.Queries, certPath string) *Server {
+func New(addr string, users *users.Service, wallets *wallets.Service, userWallets *userwallets.Service, queries *db.Queries, certPath string, adminUser string, adminPass string) *Server {
 	return &Server{
 		addr:        addr,
 		users:       users,
@@ -35,6 +38,8 @@ func New(addr string, users *users.Service, wallets *wallets.Service, userWallet
 		userWallets: userWallets,
 		queries:     queries,
 		certPath:    certPath,
+		adminUser:   adminUser,
+		adminPass:   adminPass,
 		template: template.Must(template.New("users").Funcs(template.FuncMap{
 			"monthlyBudget": formatMonthlyBudget,
 			"budgetValue":   budgetValue,
@@ -49,16 +54,38 @@ func (s *Server) Addr() string {
 
 func (s *Server) ListenAndServe() error {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.listUsers)
+	protected := s.requireAuth
+	mux.HandleFunc("GET /", protected(s.listUsers))
 	mux.HandleFunc("GET /ca.crt", s.serveCACert)
-	mux.HandleFunc("POST /users", s.createUser)
-	mux.HandleFunc("POST /users/delete", s.deleteUser)
-	mux.HandleFunc("POST /wallets", s.createWallet)
-	mux.HandleFunc("POST /wallets/delete", s.deleteWallet)
-	mux.HandleFunc("POST /user-wallets", s.createUserWallet)
-	mux.HandleFunc("POST /user-wallets/budget", s.updateUserWalletBudget)
-	mux.HandleFunc("POST /user-wallets/delete", s.deleteUserWallet)
+	mux.HandleFunc("POST /users", protected(s.createUser))
+	mux.HandleFunc("POST /users/delete", protected(s.deleteUser))
+	mux.HandleFunc("POST /wallets", protected(s.createWallet))
+	mux.HandleFunc("POST /wallets/delete", protected(s.deleteWallet))
+	mux.HandleFunc("POST /user-wallets", protected(s.createUserWallet))
+	mux.HandleFunc("POST /user-wallets/budget", protected(s.updateUserWalletBudget))
+	mux.HandleFunc("POST /user-wallets/delete", protected(s.deleteUserWallet))
 	return http.ListenAndServe(s.addr, mux)
+}
+
+func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.validAdminCredentials(r) {
+			next(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="payformeproxy admin"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	}
+}
+
+func (s *Server) validAdminCredentials(r *http.Request) bool {
+	username, password, ok := r.BasicAuth()
+	if !ok || s.adminUser == "" || s.adminPass == "" {
+		return false
+	}
+	userMatch := subtle.ConstantTimeCompare([]byte(username), []byte(s.adminUser)) == 1
+	passMatch := subtle.ConstantTimeCompare([]byte(password), []byte(s.adminPass)) == 1
+	return userMatch && passMatch
 }
 
 func (s *Server) serveCACert(w http.ResponseWriter, r *http.Request) {
