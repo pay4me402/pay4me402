@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/elazarl/goproxy"
 	"github.com/majed/payformeproxy/internal/algorand"
+	"github.com/majed/payformeproxy/internal/wallets"
 	"github.com/majed/payformeproxy/internal/x402"
 )
 
@@ -21,10 +23,15 @@ type Config struct {
 	CertPath      string
 	CAKeyPath     string
 	Authenticator Authenticator
+	Wallets       WalletProvider
 }
 
 type Authenticator interface {
 	Authenticate(context.Context, string, string) (bool, error)
+}
+
+type WalletProvider interface {
+	PrivateKeyForChain(context.Context, string) (string, error)
 }
 
 type Server struct {
@@ -66,7 +73,7 @@ func New(config Config) (*Server, error) {
 
 	proxy.OnResponse(goproxy.StatusCodeIs(http.StatusPaymentRequired)).DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"))
+			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"), config.Wallets)
 			if err != nil {
 				ctx.Warnf("error handling 402 payment: %v", err)
 				return resp
@@ -143,12 +150,7 @@ func rejectConnect() *goproxy.ConnectAction {
 	}
 }
 
-func payAndRetry(req *http.Request, paymentRequiredHeader string) (*http.Response, error) {
-	mnemonic := os.Getenv("ALGORAND_MNEMONIC")
-	if mnemonic == "" {
-		return nil, fmt.Errorf("set ALGORAND_MNEMONIC to the 25-word mnemonic for the paying Algorand account")
-	}
-
+func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider WalletProvider) (*http.Response, error) {
 	challenge, err := x402.DecodePaymentRequired(paymentRequiredHeader)
 	if err != nil {
 		return nil, err
@@ -159,7 +161,18 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string) (*http.Respons
 		return nil, err
 	}
 
-	header, txID, err := algorand.BuildPaymentSignature(challenge, accepted, mnemonic)
+	if walletProvider == nil {
+		return nil, errors.New("wallet provider is not configured")
+	}
+	privateKey, err := walletProvider.PrivateKeyForChain(req.Context(), wallets.ChainAlgorand)
+	if err != nil {
+		return nil, err
+	}
+	if privateKey == "" {
+		return nil, errors.New("create an algorand wallet in the admin UI before handling Algorand payments")
+	}
+
+	header, txID, err := algorand.BuildPaymentSignature(challenge, accepted, privateKey)
 	if err != nil {
 		return nil, err
 	}

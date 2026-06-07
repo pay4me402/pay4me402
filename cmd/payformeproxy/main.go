@@ -11,6 +11,7 @@ import (
 	"github.com/majed/payformeproxy/internal/env"
 	"github.com/majed/payformeproxy/internal/proxy"
 	"github.com/majed/payformeproxy/internal/users"
+	"github.com/majed/payformeproxy/internal/wallets"
 	_ "modernc.org/sqlite"
 )
 
@@ -28,8 +29,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	userService := users.NewService(db.New(database))
-	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService)
+	queries := db.New(database)
+	userService := users.NewService(queries)
+	walletService := wallets.NewService(queries)
+	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService, walletService)
 	go func() {
 		log.Printf("payformeproxy admin listening on %s", adminServer.Addr())
 		if err := adminServer.ListenAndServe(); err != nil {
@@ -42,6 +45,7 @@ func main() {
 		CertPath:      env.Get("CA_CERT_FILE", "certs/payformeproxy-ca.crt"),
 		CAKeyPath:     env.Get("CA_KEY_FILE", "certs/payformeproxy-ca.key"),
 		Authenticator: userService,
+		Wallets:       walletService,
 	})
 	if err != nil {
 		log.Fatal(err)

@@ -6,18 +6,21 @@ import (
 	"net/http"
 
 	"github.com/majed/payformeproxy/internal/users"
+	"github.com/majed/payformeproxy/internal/wallets"
 )
 
 type Server struct {
 	addr     string
 	users    *users.Service
+	wallets  *wallets.Service
 	template *template.Template
 }
 
-func New(addr string, users *users.Service) *Server {
+func New(addr string, users *users.Service, wallets *wallets.Service) *Server {
 	return &Server{
 		addr:     addr,
 		users:    users,
+		wallets:  wallets,
 		template: template.Must(template.New("users").Parse(usersPage)),
 	}
 }
@@ -31,6 +34,8 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("GET /", s.listUsers)
 	mux.HandleFunc("POST /users", s.createUser)
 	mux.HandleFunc("POST /users/delete", s.deleteUser)
+	mux.HandleFunc("POST /wallets", s.createWallet)
+	mux.HandleFunc("POST /wallets/delete", s.deleteWallet)
 	return http.ListenAndServe(s.addr, mux)
 }
 
@@ -40,7 +45,12 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.template.Execute(w, map[string]any{"Users": items}); err != nil {
+	walletItems, err := s.wallets.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.template.Execute(w, map[string]any{"Users": items, "Wallets": walletItems}); err != nil {
 		log.Printf("render admin users page: %v", err)
 	}
 }
@@ -69,6 +79,30 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func (s *Server) createWallet(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := s.wallets.Create(r.Context(), r.FormValue("name"), r.FormValue("chain"), r.FormValue("private_key")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) deleteWallet(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.wallets.Delete(r.Context(), r.FormValue("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 const usersPage = `<!doctype html>
 <html lang="en">
 <head>
@@ -86,7 +120,8 @@ const usersPage = `<!doctype html>
   </style>
 </head>
 <body>
-  <h1>Proxy Users</h1>
+  <h1>PayForMe Proxy Admin</h1>
+  <h2>Proxy Users</h2>
   <form method="post" action="/users">
     <input name="username" placeholder="username" required>
     <input name="password" type="password" placeholder="password" required>
@@ -108,6 +143,36 @@ const usersPage = `<!doctype html>
       </tr>
       {{else}}
       <tr><td colspan="3">No users yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  <h2>Wallets</h2>
+  <form method="post" action="/wallets">
+    <input name="name" placeholder="wallet name" required>
+    <select name="chain" required>
+      <option value="algorand">algorand</option>
+      <option value="solana">solana</option>
+    </select>
+    <input name="private_key" type="password" placeholder="private key / mnemonic" required>
+    <button type="submit">Add wallet</button>
+  </form>
+  <table>
+    <thead><tr><th>Name</th><th>Chain</th><th>Created</th><th>Actions</th></tr></thead>
+    <tbody>
+      {{range .Wallets}}
+      <tr>
+        <td>{{.Name}}</td>
+        <td>{{.Chain}}</td>
+        <td>{{.CreatedAt}}</td>
+        <td>
+          <form method="post" action="/wallets/delete">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="4">No wallets yet.</td></tr>
       {{end}}
     </tbody>
   </table>
