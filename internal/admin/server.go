@@ -1,32 +1,40 @@
 package admin
 
 import (
+	"database/sql"
 	"html/template"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/majed/payformeproxy/internal/db"
 	"github.com/majed/payformeproxy/internal/users"
+	"github.com/majed/payformeproxy/internal/userwallets"
 	"github.com/majed/payformeproxy/internal/wallets"
 )
 
 type Server struct {
-	addr     string
-	users    *users.Service
-	wallets  *wallets.Service
-	queries  *db.Queries
-	template *template.Template
+	addr        string
+	users       *users.Service
+	wallets     *wallets.Service
+	userWallets *userwallets.Service
+	queries     *db.Queries
+	template    *template.Template
 }
 
-func New(addr string, users *users.Service, wallets *wallets.Service, queries *db.Queries) *Server {
+func New(addr string, users *users.Service, wallets *wallets.Service, userWallets *userwallets.Service, queries *db.Queries) *Server {
 	return &Server{
-		addr:     addr,
-		users:    users,
-		wallets:  wallets,
-		queries:  queries,
-		template: template.Must(template.New("users").Parse(usersPage)),
+		addr:        addr,
+		users:       users,
+		wallets:     wallets,
+		userWallets: userWallets,
+		queries:     queries,
+		template: template.Must(template.New("users").Funcs(template.FuncMap{
+			"monthlyBudget": formatMonthlyBudget,
+			"budgetValue":   budgetValue,
+		}).Parse(usersPage)),
 	}
 }
 
@@ -41,6 +49,9 @@ func (s *Server) ListenAndServe() error {
 	mux.HandleFunc("POST /users/delete", s.deleteUser)
 	mux.HandleFunc("POST /wallets", s.createWallet)
 	mux.HandleFunc("POST /wallets/delete", s.deleteWallet)
+	mux.HandleFunc("POST /user-wallets", s.createUserWallet)
+	mux.HandleFunc("POST /user-wallets/budget", s.updateUserWalletBudget)
+	mux.HandleFunc("POST /user-wallets/delete", s.deleteUserWallet)
 	return http.ListenAndServe(s.addr, mux)
 }
 
@@ -60,9 +71,15 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	userWalletItems, err := s.userWallets.List(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if err := s.template.Execute(w, map[string]any{
 		"Users":            items,
 		"Wallets":          walletItems,
+		"UserWallets":      userWalletItems,
 		"Transactions":     transactionItems,
 		"SelectedUserID":   r.URL.Query().Get("user_id"),
 		"SelectedWalletID": r.URL.Query().Get("wallet_id"),
@@ -140,6 +157,20 @@ func baseURL(raw string) string {
 	return parsed.Scheme + "://" + parsed.Host
 }
 
+func formatMonthlyBudget(value sql.NullFloat64) string {
+	if !value.Valid {
+		return "Unlimited"
+	}
+	return strconv.FormatFloat(value.Float64, 'f', -1, 64) + " USDC"
+}
+
+func budgetValue(value sql.NullFloat64) string {
+	if !value.Valid {
+		return ""
+	}
+	return strconv.FormatFloat(value.Float64, 'f', -1, 64)
+}
+
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -182,6 +213,60 @@ func (s *Server) deleteWallet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.wallets.Delete(r.Context(), r.FormValue("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) createUserWallet(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var monthlyBudget *float64
+	if raw := strings.TrimSpace(r.FormValue("monthly_budget")); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			http.Error(w, "monthly budget must be a number", http.StatusBadRequest)
+			return
+		}
+		monthlyBudget = &value
+	}
+	if _, err := s.userWallets.Assign(r.Context(), r.FormValue("user_id"), r.FormValue("wallet_id"), monthlyBudget); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) updateUserWalletBudget(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var monthlyBudget *float64
+	if raw := strings.TrimSpace(r.FormValue("monthly_budget")); raw != "" {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			http.Error(w, "monthly budget must be a number", http.StatusBadRequest)
+			return
+		}
+		monthlyBudget = &value
+	}
+	if _, err := s.userWallets.UpdateMonthlyBudget(r.Context(), r.FormValue("id"), monthlyBudget); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *Server) deleteUserWallet(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.userWallets.Delete(r.Context(), r.FormValue("id")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -261,6 +346,51 @@ const usersPage = `<!doctype html>
       </tr>
       {{else}}
       <tr><td colspan="4">No wallets yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  <h2>User Wallet Access</h2>
+  <form method="post" action="/user-wallets">
+    <select name="user_id" required>
+      <option value="">Select user</option>
+      {{range .Users}}
+      <option value="{{.ID}}">{{.Username}}</option>
+      {{end}}
+    </select>
+    <select name="wallet_id" required>
+      <option value="">Select wallet</option>
+      {{range .Wallets}}
+      <option value="{{.ID}}">{{.Name}} ({{.Chain}})</option>
+      {{end}}
+    </select>
+    <input name="monthly_budget" type="number" step="0.000001" min="0" placeholder="monthly budget USDC (optional)">
+    <button type="submit">Assign wallet</button>
+  </form>
+  <table>
+    <thead><tr><th>User</th><th>Wallet</th><th>Monthly Budget</th><th>Created</th><th>Actions</th></tr></thead>
+    <tbody>
+      {{range .UserWallets}}
+      <tr>
+        <td>{{index $.UsernamesByID .UserID}}</td>
+        <td>{{index $.WalletNamesByID .WalletID}}</td>
+        <td>
+          <form method="post" action="/user-wallets/budget">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <input name="monthly_budget" type="number" step="0.000001" min="0" placeholder="unlimited" value="{{budgetValue .MonthlyBudget}}">
+            <button type="submit">Save</button>
+          </form>
+          <div class="secondary">Current: {{monthlyBudget .MonthlyBudget}}</div>
+        </td>
+        <td>{{.CreatedAt}}</td>
+        <td>
+          <form method="post" action="/user-wallets/delete">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="5">No user wallet assignments yet.</td></tr>
       {{end}}
     </tbody>
   </table>
