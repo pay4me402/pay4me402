@@ -23,17 +23,15 @@ type PaymentOption struct {
 }
 
 type PaymentSignature struct {
-	X402Version  int              `json:"x402Version"`
-	Scheme       string           `json:"scheme"`
-	Network      string           `json:"network"`
-	Resource     Resource         `json:"resource"`
-	Accepted     PaymentOption    `json:"accepted"`
-	Extensions   map[string]any   `json:"extensions"`
-	OutputSchema any              `json:"outputSchema"`
-	Payload      SignaturePayload `json:"payload"`
+	X402Version int              `json:"x402Version"`
+	Resource    Resource         `json:"resource,omitempty"`
+	Accepted    PaymentOption    `json:"accepted"`
+	Extensions  map[string]any   `json:"extensions,omitempty"`
+	Payload     SignaturePayload `json:"payload"`
 }
 
 type SignaturePayload struct {
-	PaymentIndex int      `json:"paymentIndex"`
-	PaymentGroup []string `json:"paymentGroup"`
+	PaymentIndex int      `json:"paymentIndex,omitempty"`
+	PaymentGroup []string `json:"paymentGroup,omitempty"`
+	Transaction  string   `json:"transaction,omitempty"`
 }

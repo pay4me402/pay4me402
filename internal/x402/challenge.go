@@ -28,10 +28,28 @@ func DecodePaymentRequired(header string) (Challenge, error) {
 
 func SelectAlgorandPayment(challenge Challenge) (PaymentOption, error) {
 	for _, option := range challenge.Accepts {
-		if option.Scheme == "exact" && strings.HasPrefix(option.Network, "algorand:") {
+		if IsAlgorandPayment(option) {
 			return option, nil
 		}
 	}
 
 	return PaymentOption{}, errors.New("Payment-Required header did not include an Algorand exact payment option")
+}
+
+func SelectSolanaPayment(challenge Challenge) (PaymentOption, error) {
+	for _, option := range challenge.Accepts {
+		if IsSolanaPayment(option) {
+			return option, nil
+		}
+	}
+
+	return PaymentOption{}, errors.New("Payment-Required header did not include a Solana exact payment option")
+}
+
+func IsAlgorandPayment(option PaymentOption) bool {
+	return option.Scheme == "exact" && strings.HasPrefix(option.Network, "algorand:")
+}
+
+func IsSolanaPayment(option PaymentOption) bool {
+	return option.Scheme == "exact" && strings.HasPrefix(option.Network, "solana")
 }

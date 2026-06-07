@@ -101,13 +101,9 @@ func BuildPaymentSignature(challenge x402.Challenge, accepted x402.PaymentOption
 	}
 
 	signature := x402.PaymentSignature{
-		X402Version:  challenge.X402Version,
-		Scheme:       accepted.Scheme,
-		Network:      accepted.Network,
-		Resource:     challenge.Resource,
-		Accepted:     accepted,
-		Extensions:   map[string]any{},
-		OutputSchema: nil,
+		X402Version: challenge.X402Version,
+		Resource:    challenge.Resource,
+		Accepted:    accepted,
 		Payload: x402.SignaturePayload{
 			PaymentIndex: 1,
 			PaymentGroup: []string{

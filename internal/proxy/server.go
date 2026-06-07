@@ -14,6 +14,7 @@ import (
 
 	"github.com/elazarl/goproxy"
 	"github.com/majed/payformeproxy/internal/algorand"
+	pfsolana "github.com/majed/payformeproxy/internal/solana"
 	"github.com/majed/payformeproxy/internal/wallets"
 	"github.com/majed/payformeproxy/internal/x402"
 )
@@ -156,23 +157,16 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, err
 	}
 
-	accepted, err := x402.SelectAlgorandPayment(challenge)
-	if err != nil {
-		return nil, err
-	}
-
 	if walletProvider == nil {
 		return nil, errors.New("wallet provider is not configured")
 	}
-	privateKey, err := walletProvider.PrivateKeyForChain(req.Context(), wallets.ChainAlgorand)
+
+	accepted, chain, privateKey, err := selectPayment(req.Context(), challenge, walletProvider)
 	if err != nil {
 		return nil, err
 	}
-	if privateKey == "" {
-		return nil, errors.New("create an algorand wallet in the admin UI before handling Algorand payments")
-	}
 
-	header, txID, err := algorand.BuildPaymentSignature(challenge, accepted, privateKey)
+	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -187,12 +181,59 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, err
 	}
 
-	log.Printf("Algorand payment transaction: %s", txID)
+	log.Printf("%s payment transaction: %s", chain, txID)
 	if paymentResponse := paidResp.Header.Get("PAYMENT-RESPONSE"); paymentResponse != "" {
 		log.Printf("PAYMENT-RESPONSE: %s", paymentResponse)
 	}
 
 	return paidResp, nil
+}
+
+func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider WalletProvider) (x402.PaymentOption, string, string, error) {
+	var supportedChains []string
+	for _, option := range challenge.Accepts {
+		chain, ok := paymentChain(option)
+		if !ok {
+			continue
+		}
+		supportedChains = append(supportedChains, chain)
+		privateKey, err := walletProvider.PrivateKeyForChain(ctx, chain)
+		if err != nil {
+			return x402.PaymentOption{}, "", "", err
+		}
+		if privateKey != "" {
+			return option, chain, privateKey, nil
+		}
+	}
+	if len(supportedChains) == 0 {
+		return x402.PaymentOption{}, "", "", errors.New("Payment-Required header did not include a supported exact payment option")
+	}
+	return x402.PaymentOption{}, "", "", fmt.Errorf("create a wallet for one of the accepted payment chains: %v", supportedChains)
+}
+
+func paymentChain(option x402.PaymentOption) (string, bool) {
+	if option.Scheme != "exact" {
+		return "", false
+	}
+	switch {
+	case x402.IsSolanaPayment(option):
+		return wallets.ChainSolana, true
+	case x402.IsAlgorandPayment(option):
+		return wallets.ChainAlgorand, true
+	default:
+		return "", false
+	}
+}
+
+func buildPaymentSignature(ctx context.Context, challenge x402.Challenge, accepted x402.PaymentOption, chain string, privateKey string) (string, string, error) {
+	switch chain {
+	case wallets.ChainSolana:
+		return pfsolana.BuildPaymentSignature(ctx, challenge, accepted, privateKey)
+	case wallets.ChainAlgorand:
+		return algorand.BuildPaymentSignature(challenge, accepted, privateKey)
+	default:
+		return "", "", fmt.Errorf("unsupported payment chain %q", chain)
+	}
 }
 
 func loadCAFiles(certPath string, keyPath string) ([]byte, []byte, error) {
