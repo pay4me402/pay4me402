@@ -1,6 +1,9 @@
 # Pay4MeProxy
 
-Pay4MeProxy is an HTTP proxy for x402-enabled services. It intercepts `402 Payment Required` responses, builds a supported payment signature from a configured wallet, retries the request, and records proxy activity in SQLite.
+**Pay4MeProxy** is an open-source Go proxy built for low-latency, machine-to-machine payments with built-in economic controls. It implements the x402 protocol to handle HTTP 402 Payment Required responses natively — turning payment negotiation into a seamless, programmatic part of the request lifecycle.
+
+Beyond simple payment forwarding, Pay4MeProxy acts as an economic firewall between your application and paid APIs. Developers get centralized control over outbound spending: define payment caps, track consumption in real time, and manage access policies across multiple downstream clients — all without ever exposing raw wallet credentials.
+
 
 The project includes:
 
