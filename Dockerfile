@@ -45,7 +45,7 @@ COPY --from=builder /app/payformeproxy /app/payformeproxy
 COPY --from=builder /build/certs/ /app/certs/
 
 # Secure files for the unprivileged user
-RUN chown -R appuser:appgroup /app
+RUN mkdir -p /app/data && chown -R appuser:appgroup /app
 
 EXPOSE 8089
 EXPOSE 8090
