@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -32,6 +33,7 @@ type Config struct {
 	Authenticator Authenticator
 	Wallets       WalletProvider
 	Transactions  TransactionRecorder
+	WalletAccess  WalletAccessController
 }
 
 type Authenticator interface {
@@ -54,9 +56,34 @@ type TransactionRecorder interface {
 	CreateTransaction(context.Context, db.CreateTransactionParams) (db.Transaction, error)
 }
 
+type WalletAccessController interface {
+	GetUserWalletByUserAndWallet(context.Context, db.GetUserWalletByUserAndWalletParams) (db.UserWallet, error)
+	ListTransactionsByUser(context.Context, string) ([]db.Transaction, error)
+}
+
 type contextKey string
 
 const userContextKey contextKey = "proxy_user"
+
+const (
+	transactionStatusSuccess               = "success"
+	transactionStatusBudgetExceeded        = "budget_exceeded"
+	transactionStatusNoMatchingWalletFound = "no_matching_wallet_found"
+	transactionStatusFailedUnknown         = "failed_unknown"
+)
+
+type paymentAccessError struct {
+	status string
+	err    error
+}
+
+func (e paymentAccessError) Error() string {
+	return e.err.Error()
+}
+
+func (e paymentAccessError) Unwrap() error {
+	return e.err
+}
 
 type Server struct {
 	addr    string
@@ -104,7 +131,7 @@ func New(config Config) (*Server, error) {
 
 	proxy.OnResponse(goproxy.StatusCodeIs(http.StatusPaymentRequired)).DoFunc(
 		func(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"), config.Wallets, config.Transactions)
+			paidResp, err := payAndRetry(resp.Request, resp.Header.Get("Payment-Required"), config.Wallets, config.Transactions, config.WalletAccess)
 			if err != nil {
 				ctx.Warnf("error handling 402 payment: %v", err)
 				return resp
@@ -192,7 +219,7 @@ func rejectConnect() *goproxy.ConnectAction {
 	}
 }
 
-func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider WalletProvider, transactionRecorder TransactionRecorder) (*http.Response, error) {
+func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider WalletProvider, transactionRecorder TransactionRecorder, walletAccess WalletAccessController) (*http.Response, error) {
 	challenge, err := x402.DecodePaymentRequired(paymentRequiredHeader)
 	if err != nil {
 		return nil, err
@@ -202,13 +229,22 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, errors.New("wallet provider is not configured")
 	}
 
-	accepted, chain, wallet, err := selectPayment(req.Context(), challenge, walletProvider)
+	accepted, chain, wallet, err := selectPayment(req.Context(), challenge, walletProvider, walletAccess)
 	if err != nil {
+		var accessErr paymentAccessError
+		if errors.As(err, &accessErr) && wallet.ID != "" {
+			if recordErr := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, accessErr.status); recordErr != nil {
+				log.Printf("record denied payment transaction: %v", recordErr)
+			}
+		}
 		return nil, err
 	}
 
 	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, wallet.PrivateKey)
 	if err != nil {
+		if recordErr := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, transactionStatusFailedUnknown); recordErr != nil {
+			log.Printf("record failed payment transaction: %v", recordErr)
+		}
 		return nil, err
 	}
 
@@ -219,6 +255,9 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 	client := &http.Client{Timeout: 30 * time.Second}
 	paidResp, err := client.Do(retryReq)
 	if err != nil {
+		if recordErr := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, transactionStatusFailedUnknown); recordErr != nil {
+			log.Printf("record failed payment transaction: %v", recordErr)
+		}
 		return nil, err
 	}
 
@@ -231,15 +270,17 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 	}
 
 	if paidResp.StatusCode >= 200 && paidResp.StatusCode < 300 {
-		if err := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount); err != nil {
+		if err := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, transactionStatusSuccess); err != nil {
 			log.Printf("record payment transaction: %v", err)
 		}
+	} else if err := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, transactionStatusFailedUnknown); err != nil {
+		log.Printf("record failed payment transaction: %v", err)
 	}
 
 	return paidResp, nil
 }
 
-func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider WalletProvider) (x402.PaymentOption, string, db.Wallet, error) {
+func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider WalletProvider, walletAccess WalletAccessController) (x402.PaymentOption, string, db.Wallet, error) {
 	var supportedChains []string
 	for _, option := range challenge.Accepts {
 		chain, ok := paymentChain(option)
@@ -252,6 +293,13 @@ func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider
 			return x402.PaymentOption{}, "", db.Wallet{}, err
 		}
 		if wallet.PrivateKey != "" {
+			if err := authorizeWalletPayment(ctx, walletAccess, wallet.ID, option.Amount); err != nil {
+				var accessErr paymentAccessError
+				if errors.As(err, &accessErr) {
+					return option, chain, wallet, err
+				}
+				return option, chain, wallet, paymentAccessError{status: transactionStatusFailedUnknown, err: err}
+			}
 			return option, chain, wallet, nil
 		}
 	}
@@ -259,6 +307,58 @@ func selectPayment(ctx context.Context, challenge x402.Challenge, walletProvider
 		return x402.PaymentOption{}, "", db.Wallet{}, errors.New("Payment-Required header did not include a supported exact payment option")
 	}
 	return x402.PaymentOption{}, "", db.Wallet{}, fmt.Errorf("create a wallet for one of the accepted payment chains: %v", supportedChains)
+}
+
+func authorizeWalletPayment(ctx context.Context, walletAccess WalletAccessController, walletID string, amountValue string) error {
+	if walletAccess == nil {
+		return errors.New("wallet access controller is not configured")
+	}
+	user, ok := ctx.Value(userContextKey).(db.ProxyUser)
+	if !ok || user.ID == "" {
+		return errors.New("authenticated proxy user is missing from request context")
+	}
+	assignment, err := walletAccess.GetUserWalletByUserAndWallet(ctx, db.GetUserWalletByUserAndWalletParams{
+		UserID:   user.ID,
+		WalletID: walletID,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return paymentAccessError{status: transactionStatusNoMatchingWalletFound, err: errors.New("user is not assigned to this wallet")}
+	}
+	if err != nil {
+		return err
+	}
+	if !assignment.MonthlyBudget.Valid {
+		return nil
+	}
+	amount, err := parsePaymentAmount(amountValue)
+	if err != nil {
+		return err
+	}
+	consumption, err := currentMonthConsumption(ctx, walletAccess, user.ID, walletID)
+	if err != nil {
+		return err
+	}
+	if consumption+amount > assignment.MonthlyBudget.Float64 {
+		return paymentAccessError{status: transactionStatusBudgetExceeded, err: fmt.Errorf("monthly wallet budget exceeded: %.6f USDC used plus %.6f USDC payment exceeds %.6f USDC budget", consumption, amount, assignment.MonthlyBudget.Float64)}
+	}
+	return nil
+}
+
+func currentMonthConsumption(ctx context.Context, walletAccess WalletAccessController, userID string, walletID string) (float64, error) {
+	transactions, err := walletAccess.ListTransactionsByUser(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	var total float64
+	for _, transaction := range transactions {
+		if transaction.WalletID != walletID || transaction.Status != transactionStatusSuccess || transaction.CreatedAt.Before(startOfMonth) {
+			continue
+		}
+		total += transaction.Amount
+	}
+	return total, nil
 }
 
 func walletForChain(ctx context.Context, walletProvider WalletProvider, chain string) (db.Wallet, error) {
@@ -300,7 +400,7 @@ func buildPaymentSignature(ctx context.Context, challenge x402.Challenge, accept
 	}
 }
 
-func recordTransaction(ctx context.Context, recorder TransactionRecorder, walletID string, resource string, amountValue string) error {
+func recordTransaction(ctx context.Context, recorder TransactionRecorder, walletID string, resource string, amountValue string, status string) error {
 	if recorder == nil {
 		return nil
 	}
@@ -318,6 +418,7 @@ func recordTransaction(ctx context.Context, recorder TransactionRecorder, wallet
 		WalletID: walletID,
 		Resource: resource,
 		Amount:   amount,
+		Status:   status,
 	})
 	return err
 }

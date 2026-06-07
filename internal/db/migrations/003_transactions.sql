@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     wallet_id TEXT NOT NULL,
     resource TEXT NOT NULL,
     amount REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'success',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES proxy_users(id) ON DELETE CASCADE,
     FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE

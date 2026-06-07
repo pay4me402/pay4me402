@@ -184,7 +184,7 @@ func consumptionByUserWallet(transactions []db.Transaction) map[string]float64 {
 	now := time.Now()
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	for _, transaction := range transactions {
-		if transaction.CreatedAt.Before(startOfMonth) {
+		if transaction.Status != "success" || transaction.CreatedAt.Before(startOfMonth) {
 			continue
 		}
 		values[userWalletKey(transaction.UserID, transaction.WalletID)] += transaction.Amount
@@ -444,18 +444,19 @@ const usersPage = `<!doctype html>
     <a class="secondary" href="/">Clear</a>
   </form>
   <table>
-    <thead><tr><th>User</th><th>Wallet</th><th>Amount</th><th>Resource</th><th>Created</th></tr></thead>
+    <thead><tr><th>User</th><th>Wallet</th><th>Amount</th><th>Status</th><th>Resource</th><th>Created</th></tr></thead>
     <tbody>
       {{range .Transactions}}
       <tr>
         <td>{{index $.UsernamesByID .UserID}}</td>
         <td>{{index $.WalletNamesByID .WalletID}}</td>
         <td>{{.Amount}}</td>
+        <td>{{.Status}}</td>
         <td class="resource">{{.Resource}}</td>
         <td>{{.CreatedAt}}</td>
       </tr>
       {{else}}
-      <tr><td colspan="5">No transactions found.</td></tr>
+      <tr><td colspan="6">No transactions found.</td></tr>
       {{end}}
     </tbody>
   </table>

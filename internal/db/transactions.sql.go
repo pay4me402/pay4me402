@@ -10,9 +10,9 @@ import (
 )
 
 const createTransaction = `-- name: CreateTransaction :one
-INSERT INTO transactions (id, user_id, wallet_id, resource, amount)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, user_id, wallet_id, resource, amount, created_at
+INSERT INTO transactions (id, user_id, wallet_id, resource, amount, status)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, user_id, wallet_id, resource, amount, status, created_at
 `
 
 type CreateTransactionParams struct {
@@ -21,6 +21,7 @@ type CreateTransactionParams struct {
 	WalletID string  `json:"wallet_id"`
 	Resource string  `json:"resource"`
 	Amount   float64 `json:"amount"`
+	Status   string  `json:"status"`
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {
@@ -30,6 +31,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		arg.WalletID,
 		arg.Resource,
 		arg.Amount,
+		arg.Status,
 	)
 	var i Transaction
 	err := row.Scan(
@@ -38,6 +40,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 		&i.WalletID,
 		&i.Resource,
 		&i.Amount,
+		&i.Status,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -54,7 +57,7 @@ func (q *Queries) DeleteTransaction(ctx context.Context, id string) error {
 }
 
 const getTransaction = `-- name: GetTransaction :one
-SELECT id, user_id, wallet_id, resource, amount, created_at
+SELECT id, user_id, wallet_id, resource, amount, status, created_at
 FROM transactions
 WHERE id = ?
 `
@@ -68,13 +71,14 @@ func (q *Queries) GetTransaction(ctx context.Context, id string) (Transaction, e
 		&i.WalletID,
 		&i.Resource,
 		&i.Amount,
+		&i.Status,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listTransactions = `-- name: ListTransactions :many
-SELECT id, user_id, wallet_id, resource, amount, created_at
+SELECT id, user_id, wallet_id, resource, amount, status, created_at
 FROM transactions
 ORDER BY created_at DESC
 `
@@ -94,6 +98,7 @@ func (q *Queries) ListTransactions(ctx context.Context) ([]Transaction, error) {
 			&i.WalletID,
 			&i.Resource,
 			&i.Amount,
+			&i.Status,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -110,7 +115,7 @@ func (q *Queries) ListTransactions(ctx context.Context) ([]Transaction, error) {
 }
 
 const listTransactionsByUser = `-- name: ListTransactionsByUser :many
-SELECT id, user_id, wallet_id, resource, amount, created_at
+SELECT id, user_id, wallet_id, resource, amount, status, created_at
 FROM transactions
 WHERE user_id = ?
 ORDER BY created_at DESC
@@ -131,6 +136,7 @@ func (q *Queries) ListTransactionsByUser(ctx context.Context, userID string) ([]
 			&i.WalletID,
 			&i.Resource,
 			&i.Amount,
+			&i.Status,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -147,7 +153,7 @@ func (q *Queries) ListTransactionsByUser(ctx context.Context, userID string) ([]
 }
 
 const listTransactionsByWallet = `-- name: ListTransactionsByWallet :many
-SELECT id, user_id, wallet_id, resource, amount, created_at
+SELECT id, user_id, wallet_id, resource, amount, status, created_at
 FROM transactions
 WHERE wallet_id = ?
 ORDER BY created_at DESC
@@ -168,6 +174,7 @@ func (q *Queries) ListTransactionsByWallet(ctx context.Context, walletID string)
 			&i.WalletID,
 			&i.Resource,
 			&i.Amount,
+			&i.Status,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

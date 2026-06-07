@@ -23,6 +23,7 @@ type Transaction struct {
 	WalletID  string    `json:"wallet_id"`
 	Resource  string    `json:"resource"`
 	Amount    float64   `json:"amount"`
+	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

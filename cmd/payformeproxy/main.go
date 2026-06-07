@@ -49,6 +49,7 @@ func main() {
 		Authenticator: userService,
 		Wallets:       walletService,
 		Transactions:  queries,
+		WalletAccess:  queries,
 	})
 	if err != nil {
 		log.Fatal(err)
