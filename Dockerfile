@@ -16,7 +16,7 @@ RUN mkdir -p certs && \
     openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
       -keyout certs/payformeproxy-ca.key \
       -out certs/payformeproxy-ca.crt \
-      -subj "/C=UK/ST=London/L=London/O=402Proxy/OU=402Proxy/CN=proxy"
+      -subj "/C=UK/ST=London/L=London/O=402Proxy/OU=402Proxy/CN=pay402me.com"
 
 # 2. Build Go application
 COPY go.mod go.sum ./
@@ -48,6 +48,7 @@ COPY --from=builder /build/certs/ /app/certs/
 RUN chown -R appuser:appgroup /app
 
 EXPOSE 8089
+EXPOSE 8090
 
 USER appuser
 
