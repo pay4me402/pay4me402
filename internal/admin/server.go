@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/majed/payformeproxy/internal/db"
 	"github.com/majed/payformeproxy/internal/users"
@@ -34,6 +35,7 @@ func New(addr string, users *users.Service, wallets *wallets.Service, userWallet
 		template: template.Must(template.New("users").Funcs(template.FuncMap{
 			"monthlyBudget": formatMonthlyBudget,
 			"budgetValue":   budgetValue,
+			"consumption":   consumption,
 		}).Parse(usersPage)),
 	}
 }
@@ -76,10 +78,12 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	currentMonthConsumption := consumptionByUserWallet(allTransactions)
 	if err := s.template.Execute(w, map[string]any{
 		"Users":            items,
 		"Wallets":          walletItems,
 		"UserWallets":      userWalletItems,
+		"Consumption":      currentMonthConsumption,
 		"Transactions":     transactionItems,
 		"SelectedUserID":   r.URL.Query().Get("user_id"),
 		"SelectedWalletID": r.URL.Query().Get("wallet_id"),
@@ -169,6 +173,27 @@ func budgetValue(value sql.NullFloat64) string {
 		return ""
 	}
 	return strconv.FormatFloat(value.Float64, 'f', -1, 64)
+}
+
+func consumption(values map[string]float64, userID string, walletID string) string {
+	return strconv.FormatFloat(values[userWalletKey(userID, walletID)], 'f', -1, 64) + " USDC"
+}
+
+func consumptionByUserWallet(transactions []db.Transaction) map[string]float64 {
+	values := map[string]float64{}
+	now := time.Now()
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	for _, transaction := range transactions {
+		if transaction.CreatedAt.Before(startOfMonth) {
+			continue
+		}
+		values[userWalletKey(transaction.UserID, transaction.WalletID)] += transaction.Amount
+	}
+	return values
+}
+
+func userWalletKey(userID string, walletID string) string {
+	return userID + ":" + walletID
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +392,7 @@ const usersPage = `<!doctype html>
     <button type="submit">Assign wallet</button>
   </form>
   <table>
-    <thead><tr><th>User</th><th>Wallet</th><th>Monthly Budget</th><th>Created</th><th>Actions</th></tr></thead>
+    <thead><tr><th>User</th><th>Wallet</th><th>Monthly Budget</th><th>Current Month Consumption</th><th>Created</th><th>Actions</th></tr></thead>
     <tbody>
       {{range .UserWallets}}
       <tr>
@@ -381,6 +406,7 @@ const usersPage = `<!doctype html>
           </form>
           <div class="secondary">Current: {{monthlyBudget .MonthlyBudget}}</div>
         </td>
+        <td>{{consumption $.Consumption .UserID .WalletID}}</td>
         <td>{{.CreatedAt}}</td>
         <td>
           <form method="post" action="/user-wallets/delete">
@@ -390,7 +416,7 @@ const usersPage = `<!doctype html>
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="5">No user wallet assignments yet.</td></tr>
+      <tr><td colspan="6">No user wallet assignments yet.</td></tr>
       {{end}}
     </tbody>
   </table>
