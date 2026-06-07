@@ -1,0 +1,19 @@
+services:
+  proxy:
+    build: .
+    image: payformeproxy
+    ports:
+      - "8090:8090"
+      - "8089:8089"
+    environment:
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: admin
+      DATABASE_URL: /app/data/payformeproxy.db
+      CA_CERT_FILE: /app/certs/payformeproxy-ca.crt
+      CA_KEY_FILE: /app/certs/payformeproxy-ca.key
+    volumes:
+      - payformeproxy-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  payformeproxy-data:
