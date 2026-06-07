@@ -4,7 +4,10 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 
+	"github.com/majed/payformeproxy/internal/db"
 	"github.com/majed/payformeproxy/internal/users"
 	"github.com/majed/payformeproxy/internal/wallets"
 )
@@ -13,14 +16,16 @@ type Server struct {
 	addr     string
 	users    *users.Service
 	wallets  *wallets.Service
+	queries  *db.Queries
 	template *template.Template
 }
 
-func New(addr string, users *users.Service, wallets *wallets.Service) *Server {
+func New(addr string, users *users.Service, wallets *wallets.Service, queries *db.Queries) *Server {
 	return &Server{
 		addr:     addr,
 		users:    users,
 		wallets:  wallets,
+		queries:  queries,
 		template: template.Must(template.New("users").Parse(usersPage)),
 	}
 }
@@ -50,9 +55,89 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.template.Execute(w, map[string]any{"Users": items, "Wallets": walletItems}); err != nil {
+	allTransactions, transactionItems, err := s.filteredTransactions(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.template.Execute(w, map[string]any{
+		"Users":            items,
+		"Wallets":          walletItems,
+		"Transactions":     transactionItems,
+		"SelectedUserID":   r.URL.Query().Get("user_id"),
+		"SelectedWalletID": r.URL.Query().Get("wallet_id"),
+		"SelectedResource": r.URL.Query().Get("resource_base_url"),
+		"ResourceBaseURLs": resourceBaseURLs(allTransactions),
+		"UsernamesByID":    usernamesByID(items),
+		"WalletNamesByID":  walletNamesByID(walletItems),
+	}); err != nil {
 		log.Printf("render admin users page: %v", err)
 	}
+}
+
+func (s *Server) filteredTransactions(r *http.Request) ([]db.Transaction, []db.Transaction, error) {
+	if s.queries == nil {
+		return nil, nil, nil
+	}
+	transactions, err := s.queries.ListTransactions(r.Context())
+	if err != nil {
+		return nil, nil, err
+	}
+	userID := r.URL.Query().Get("user_id")
+	walletID := r.URL.Query().Get("wallet_id")
+	resourceBaseURL := r.URL.Query().Get("resource_base_url")
+	filtered := transactions[:0]
+	for _, transaction := range transactions {
+		if userID != "" && transaction.UserID != userID {
+			continue
+		}
+		if walletID != "" && transaction.WalletID != walletID {
+			continue
+		}
+		if resourceBaseURL != "" && baseURL(transaction.Resource) != resourceBaseURL {
+			continue
+		}
+		filtered = append(filtered, transaction)
+	}
+	return transactions, filtered, nil
+}
+
+func usernamesByID(users []db.ProxyUser) map[string]string {
+	values := make(map[string]string, len(users))
+	for _, user := range users {
+		values[user.ID] = user.Username
+	}
+	return values
+}
+
+func walletNamesByID(wallets []db.Wallet) map[string]string {
+	values := make(map[string]string, len(wallets))
+	for _, wallet := range wallets {
+		values[wallet.ID] = wallet.Name
+	}
+	return values
+}
+
+func resourceBaseURLs(transactions []db.Transaction) []string {
+	seen := map[string]bool{}
+	var values []string
+	for _, transaction := range transactions {
+		value := baseURL(transaction.Resource)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	return values
+}
+
+func baseURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return strings.TrimSpace(raw)
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
@@ -110,12 +195,15 @@ const usersPage = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Proxy Users</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; color: #111827; }
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 16px; color: #111827; }
     form { display: flex; gap: 8px; align-items: center; margin: 16px 0; }
-    input { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+    input, select { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
     button { padding: 8px 12px; border: 0; border-radius: 6px; background: #111827; color: white; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 24px; }
     th, td { text-align: left; border-bottom: 1px solid #e5e7eb; padding: 10px 8px; }
+    td.resource { max-width: 360px; overflow-wrap: anywhere; }
+    .filters { flex-wrap: wrap; }
+    .secondary { color: #374151; text-decoration: none; }
     .danger { background: #dc2626; }
   </style>
 </head>
@@ -173,6 +261,45 @@ const usersPage = `<!doctype html>
       </tr>
       {{else}}
       <tr><td colspan="4">No wallets yet.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+  <h2>Transactions</h2>
+  <form class="filters" method="get" action="/">
+    <select name="user_id">
+      <option value="">All users</option>
+      {{range .Users}}
+      <option value="{{.ID}}" {{if eq $.SelectedUserID .ID}}selected{{end}}>{{.Username}}</option>
+      {{end}}
+    </select>
+    <select name="wallet_id">
+      <option value="">All wallets</option>
+      {{range .Wallets}}
+      <option value="{{.ID}}" {{if eq $.SelectedWalletID .ID}}selected{{end}}>{{.Name}} ({{.Chain}})</option>
+      {{end}}
+    </select>
+    <select name="resource_base_url">
+      <option value="">All resource base URLs</option>
+      {{range .ResourceBaseURLs}}
+      <option value="{{.}}" {{if eq $.SelectedResource .}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+    <button type="submit">Filter</button>
+    <a class="secondary" href="/">Clear</a>
+  </form>
+  <table>
+    <thead><tr><th>User</th><th>Wallet</th><th>Amount</th><th>Resource</th><th>Created</th></tr></thead>
+    <tbody>
+      {{range .Transactions}}
+      <tr>
+        <td>{{index $.UsernamesByID .UserID}}</td>
+        <td>{{index $.WalletNamesByID .WalletID}}</td>
+        <td>{{.Amount}}</td>
+        <td class="resource">{{.Resource}}</td>
+        <td>{{.CreatedAt}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="5">No transactions found.</td></tr>
       {{end}}
     </tbody>
   </table>

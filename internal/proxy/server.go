@@ -322,12 +322,12 @@ func recordTransaction(ctx context.Context, recorder TransactionRecorder, wallet
 	return err
 }
 
-func parsePaymentAmount(value string) (int64, error) {
-	amount, err := strconv.ParseInt(value, 10, 64)
+func parsePaymentAmount(value string) (float64, error) {
+	amount, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return 0, fmt.Errorf("parse payment amount for transaction record: %w", err)
 	}
-	return amount, nil
+	return amount / 1_000_000, nil
 }
 
 func newID() string {

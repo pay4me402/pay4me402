@@ -21,7 +21,7 @@ type Transaction struct {
 	UserID    string    `json:"user_id"`
 	WalletID  string    `json:"wallet_id"`
 	Resource  string    `json:"resource"`
-	Amount    int64     `json:"amount"`
+	Amount    float64   `json:"amount"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

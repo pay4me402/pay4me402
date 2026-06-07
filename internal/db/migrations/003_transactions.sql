@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     user_id TEXT NOT NULL,
     wallet_id TEXT NOT NULL,
     resource TEXT NOT NULL,
-    amount INTEGER NOT NULL,
+    amount REAL NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES proxy_users(id) ON DELETE CASCADE,
     FOREIGN KEY (wallet_id) REFERENCES wallets(id) ON DELETE CASCADE

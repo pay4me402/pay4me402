@@ -16,11 +16,11 @@ RETURNING id, user_id, wallet_id, resource, amount, created_at
 `
 
 type CreateTransactionParams struct {
-	ID       string `json:"id"`
-	UserID   string `json:"user_id"`
-	WalletID string `json:"wallet_id"`
-	Resource string `json:"resource"`
-	Amount   int64  `json:"amount"`
+	ID       string  `json:"id"`
+	UserID   string  `json:"user_id"`
+	WalletID string  `json:"wallet_id"`
+	Resource string  `json:"resource"`
+	Amount   float64 `json:"amount"`
 }
 
 func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error) {

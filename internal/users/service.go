@@ -52,14 +52,29 @@ func (s *Service) Create(ctx context.Context, username string, password string) 
 }
 
 func (s *Service) Authenticate(ctx context.Context, username string, password string) (bool, error) {
-	user, err := s.queries.GetProxyUserByUsername(ctx, username)
+	user, err := s.AuthenticateUser(ctx, username, password)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
-	if err != nil {
-		return false, err
+	return user.ID != "", err
+}
+
+func (s *Service) AuthenticateUser(ctx context.Context, username string, password string) (db.ProxyUser, error) {
+	user, err := s.queries.GetProxyUserByUsername(ctx, username)
+	if errors.Is(err, sql.ErrNoRows) {
+		return db.ProxyUser{}, nil
 	}
-	return verifyPassword(password, user.PasswordHash)
+	if err != nil {
+		return db.ProxyUser{}, err
+	}
+	valid, err := verifyPassword(password, user.PasswordHash)
+	if err != nil {
+		return db.ProxyUser{}, err
+	}
+	if !valid {
+		return db.ProxyUser{}, nil
+	}
+	return user, nil
 }
 
 func (s *Service) List(ctx context.Context) ([]db.ProxyUser, error) {

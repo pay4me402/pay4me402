@@ -32,7 +32,7 @@ func main() {
 	queries := db.New(database)
 	userService := users.NewService(queries)
 	walletService := wallets.NewService(queries)
-	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService, walletService)
+	adminServer := admin.New(env.Get("ADMIN_ADDR", ":8090"), userService, walletService, queries)
 	go func() {
 		log.Printf("payformeproxy admin listening on %s", adminServer.Addr())
 		if err := adminServer.ListenAndServe(); err != nil {
