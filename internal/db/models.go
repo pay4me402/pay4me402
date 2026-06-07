@@ -37,10 +37,12 @@ type UserWallet struct {
 }
 
 type Wallet struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Chain      string    `json:"chain"`
-	PrivateKey string    `json:"private_key"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Chain       string         `json:"chain"`
+	PrivateKey  string         `json:"private_key"`
+	RpcEndpoint string         `json:"rpc_endpoint"`
+	RpcToken    sql.NullString `json:"rpc_token"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }

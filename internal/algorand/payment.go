@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/algorand/go-algorand-sdk/v2/client/v2/algod"
@@ -15,11 +14,10 @@ import (
 	"github.com/algorand/go-algorand-sdk/v2/mnemonic"
 	"github.com/algorand/go-algorand-sdk/v2/transaction"
 	"github.com/algorand/go-algorand-sdk/v2/types"
-	"github.com/majed/payformeproxy/internal/env"
 	"github.com/majed/payformeproxy/internal/x402"
 )
 
-func BuildPaymentSignature(challenge x402.Challenge, accepted x402.PaymentOption, mn string) (string, string, error) {
+func BuildPaymentSignature(challenge x402.Challenge, accepted x402.PaymentOption, mn string, rpcEndpoint string, rpcToken string) (string, string, error) {
 	account, err := mnemonic.ToPrivateKey(mn)
 	if err != nil {
 		return "", "", fmt.Errorf("load Algorand account from mnemonic: %w", err)
@@ -35,7 +33,7 @@ func BuildPaymentSignature(challenge x402.Challenge, accepted x402.PaymentOption
 		return "", "", fmt.Errorf("parse ASA asset id: %w", err)
 	}
 
-	algodClient, err := algod.MakeClient(env.Get("ALGOD_ADDRESS", "https://testnet-api.algonode.cloud"), os.Getenv("ALGOD_TOKEN"))
+	algodClient, err := algod.MakeClient(rpcEndpoint, rpcToken)
 	if err != nil {
 		return "", "", fmt.Errorf("create algod client: %w", err)
 	}

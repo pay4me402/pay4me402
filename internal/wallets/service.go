@@ -13,6 +13,8 @@ import (
 
 const ChainAlgorand = "algorand"
 const ChainSolana = "solana"
+const DefaultAlgorandRPCEndpoint = "https://testnet-api.algonode.cloud"
+const DefaultSolanaRPCEndpoint = "https://api.mainnet-beta.solana.com"
 
 type Service struct {
 	queries *db.Queries
@@ -22,10 +24,12 @@ func NewService(queries *db.Queries) *Service {
 	return &Service{queries: queries}
 }
 
-func (s *Service) Create(ctx context.Context, name string, chain string, privateKey string) (db.Wallet, error) {
+func (s *Service) Create(ctx context.Context, name string, chain string, privateKey string, rpcEndpoint string, rpcToken string) (db.Wallet, error) {
 	name = strings.TrimSpace(name)
 	chain = strings.TrimSpace(strings.ToLower(chain))
 	privateKey = strings.TrimSpace(privateKey)
+	rpcEndpoint = strings.TrimSpace(rpcEndpoint)
+	rpcToken = strings.TrimSpace(rpcToken)
 	if name == "" {
 		return db.Wallet{}, errors.New("wallet name is required")
 	}
@@ -35,13 +39,32 @@ func (s *Service) Create(ctx context.Context, name string, chain string, private
 	if privateKey == "" {
 		return db.Wallet{}, errors.New("wallet private key is required")
 	}
+	if rpcEndpoint == "" {
+		rpcEndpoint = DefaultRPCEndpoint(chain)
+	}
 
 	return s.queries.CreateWallet(ctx, db.CreateWalletParams{
-		ID:         newID(),
-		Name:       name,
-		Chain:      chain,
-		PrivateKey: privateKey,
+		ID:          newID(),
+		Name:        name,
+		Chain:       chain,
+		PrivateKey:  privateKey,
+		RpcEndpoint: rpcEndpoint,
+		RpcToken: sql.NullString{
+			String: rpcToken,
+			Valid:  rpcToken != "",
+		},
 	})
+}
+
+func DefaultRPCEndpoint(chain string) string {
+	switch chain {
+	case ChainAlgorand:
+		return DefaultAlgorandRPCEndpoint
+	case ChainSolana:
+		return DefaultSolanaRPCEndpoint
+	default:
+		return ""
+	}
 }
 
 func (s *Service) List(ctx context.Context) ([]db.Wallet, error) {

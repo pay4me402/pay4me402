@@ -19,12 +19,11 @@ import (
 	"github.com/gagliardetto/solana-go/programs/system"
 	"github.com/gagliardetto/solana-go/programs/token"
 	"github.com/gagliardetto/solana-go/rpc"
-	"github.com/majed/payformeproxy/internal/env"
 	"github.com/majed/payformeproxy/internal/x402"
 	"github.com/tyler-smith/go-bip39"
 )
 
-func BuildPaymentSignature(ctx context.Context, challenge x402.Challenge, accepted x402.PaymentOption, privateKeyValue string) (string, string, error) {
+func BuildPaymentSignature(ctx context.Context, challenge x402.Challenge, accepted x402.PaymentOption, privateKeyValue string, rpcEndpoint string) (string, string, error) {
 	privateKey, err := parsePrivateKey(privateKeyValue)
 	if err != nil {
 		return "", "", err
@@ -40,7 +39,7 @@ func BuildPaymentSignature(ctx context.Context, challenge x402.Challenge, accept
 		return "", "", fmt.Errorf("parse Solana payTo address: %w", err)
 	}
 
-	client := rpc.New(env.Get("SOLANA_RPC_URL", rpc.MainNetBeta_RPC))
+	client := rpc.New(rpcEndpoint)
 	recent, err := client.GetLatestBlockhash(ctx, rpc.CommitmentFinalized)
 	if err != nil {
 		return "", "", fmt.Errorf("fetch recent Solana blockhash: %w", err)

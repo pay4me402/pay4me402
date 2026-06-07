@@ -7,19 +7,22 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createWallet = `-- name: CreateWallet :one
-INSERT INTO wallets (id, name, chain, private_key)
-VALUES (?, ?, ?, ?)
-RETURNING id, name, chain, private_key, created_at, updated_at
+INSERT INTO wallets (id, name, chain, private_key, rpc_endpoint, rpc_token)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, name, chain, private_key, rpc_endpoint, rpc_token, created_at, updated_at
 `
 
 type CreateWalletParams struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Chain      string `json:"chain"`
-	PrivateKey string `json:"private_key"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Chain       string         `json:"chain"`
+	PrivateKey  string         `json:"private_key"`
+	RpcEndpoint string         `json:"rpc_endpoint"`
+	RpcToken    sql.NullString `json:"rpc_token"`
 }
 
 func (q *Queries) CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error) {
@@ -28,6 +31,8 @@ func (q *Queries) CreateWallet(ctx context.Context, arg CreateWalletParams) (Wal
 		arg.Name,
 		arg.Chain,
 		arg.PrivateKey,
+		arg.RpcEndpoint,
+		arg.RpcToken,
 	)
 	var i Wallet
 	err := row.Scan(
@@ -35,6 +40,8 @@ func (q *Queries) CreateWallet(ctx context.Context, arg CreateWalletParams) (Wal
 		&i.Name,
 		&i.Chain,
 		&i.PrivateKey,
+		&i.RpcEndpoint,
+		&i.RpcToken,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -52,7 +59,7 @@ func (q *Queries) DeleteWallet(ctx context.Context, id string) error {
 }
 
 const getWalletByChain = `-- name: GetWalletByChain :one
-SELECT id, name, chain, private_key, created_at, updated_at
+SELECT id, name, chain, private_key, rpc_endpoint, rpc_token, created_at, updated_at
 FROM wallets
 WHERE chain = ?
 ORDER BY created_at
@@ -67,6 +74,8 @@ func (q *Queries) GetWalletByChain(ctx context.Context, chain string) (Wallet, e
 		&i.Name,
 		&i.Chain,
 		&i.PrivateKey,
+		&i.RpcEndpoint,
+		&i.RpcToken,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -74,7 +83,7 @@ func (q *Queries) GetWalletByChain(ctx context.Context, chain string) (Wallet, e
 }
 
 const listWallets = `-- name: ListWallets :many
-SELECT id, name, chain, private_key, created_at, updated_at
+SELECT id, name, chain, private_key, rpc_endpoint, rpc_token, created_at, updated_at
 FROM wallets
 ORDER BY name
 `
@@ -93,6 +102,8 @@ func (q *Queries) ListWallets(ctx context.Context) ([]Wallet, error) {
 			&i.Name,
 			&i.Chain,
 			&i.PrivateKey,
+			&i.RpcEndpoint,
+			&i.RpcToken,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

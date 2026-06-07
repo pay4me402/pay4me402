@@ -35,6 +35,23 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 	if err := ensureColumn(ctx, database, "transactions", "status", "TEXT NOT NULL DEFAULT 'success'"); err != nil {
 		return err
 	}
+	if err := ensureColumn(ctx, database, "wallets", "rpc_endpoint", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(ctx, database, "wallets", "rpc_token", "TEXT"); err != nil {
+		return err
+	}
+	if _, err := database.ExecContext(ctx, `
+UPDATE wallets
+SET rpc_endpoint = CASE
+    WHEN chain = 'algorand' THEN 'https://testnet-api.algonode.cloud'
+    WHEN chain = 'solana' THEN 'https://api.mainnet-beta.solana.com'
+    ELSE rpc_endpoint
+END
+WHERE rpc_endpoint = '';
+`); err != nil {
+		return fmt.Errorf("default wallet rpc endpoints: %w", err)
+	}
 	return nil
 }
 

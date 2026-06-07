@@ -225,7 +225,14 @@ func (s *Server) createWallet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if _, err := s.wallets.Create(r.Context(), r.FormValue("name"), r.FormValue("chain"), r.FormValue("private_key")); err != nil {
+	rpcEndpoint := strings.TrimSpace(r.FormValue("rpc_endpoint"))
+	if customEndpoint := strings.TrimSpace(r.FormValue("custom_rpc_endpoint")); customEndpoint != "" {
+		rpcEndpoint = customEndpoint
+	}
+	if rpcEndpoint == "custom" {
+		rpcEndpoint = ""
+	}
+	if _, err := s.wallets.Create(r.Context(), r.FormValue("name"), r.FormValue("chain"), r.FormValue("private_key"), rpcEndpoint, r.FormValue("rpc_token")); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -347,20 +354,26 @@ const usersPage = `<!doctype html>
   <h2>Wallets</h2>
   <form method="post" action="/wallets">
     <input name="name" placeholder="wallet name" required>
-    <select name="chain" required>
+    <select id="wallet-chain" name="chain" required>
       <option value="algorand">algorand</option>
       <option value="solana">solana</option>
     </select>
+    <select id="wallet-rpc-endpoint" name="rpc_endpoint">
+      <option value="">Default for selected chain</option>
+    </select>
+    <input id="custom-rpc-endpoint" name="custom_rpc_endpoint" placeholder="custom RPC endpoint URL">
+    <input name="rpc_token" type="password" placeholder="RPC token (optional)">
     <input name="private_key" type="password" placeholder="private key / mnemonic" required>
     <button type="submit">Add wallet</button>
   </form>
   <table>
-    <thead><tr><th>Name</th><th>Chain</th><th>Created</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Chain</th><th>RPC Endpoint</th><th>Created</th><th>Actions</th></tr></thead>
     <tbody>
       {{range .Wallets}}
       <tr>
         <td>{{.Name}}</td>
         <td>{{.Chain}}</td>
+        <td class="resource">{{.RpcEndpoint}}</td>
         <td>{{.CreatedAt}}</td>
         <td>
           <form method="post" action="/wallets/delete">
@@ -370,7 +383,7 @@ const usersPage = `<!doctype html>
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="4">No wallets yet.</td></tr>
+      <tr><td colspan="5">No wallets yet.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -460,5 +473,47 @@ const usersPage = `<!doctype html>
       {{end}}
     </tbody>
   </table>
+  <script>
+    const rpcEndpointsByChain = {
+      algorand: [
+        ["", "Default: TestNet AlgoNode (https://testnet-api.algonode.cloud)"],
+        ["https://testnet-api.algonode.cloud", "TestNet AlgoNode"],
+        ["https://mainnet-api.algonode.cloud", "MainNet AlgoNode"],
+        ["https://betanet-api.algonode.cloud", "BetaNet AlgoNode"],
+        ["custom", "Custom endpoint"]
+      ],
+      solana: [
+        ["", "Default: MainNet Beta (https://api.mainnet-beta.solana.com)"],
+        ["https://api.mainnet-beta.solana.com", "MainNet Beta"],
+        ["https://api.devnet.solana.com", "DevNet"],
+        ["https://api.testnet.solana.com", "TestNet"],
+        ["custom", "Custom endpoint"]
+      ]
+    };
+    const walletChain = document.getElementById("wallet-chain");
+    const walletRpcEndpoint = document.getElementById("wallet-rpc-endpoint");
+    const customRpcEndpoint = document.getElementById("custom-rpc-endpoint");
+    function updateRpcEndpointOptions() {
+      const options = rpcEndpointsByChain[walletChain.value] || [];
+      walletRpcEndpoint.replaceChildren(...options.map(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        return option;
+      }));
+      updateCustomRpcEndpoint();
+    }
+    function updateCustomRpcEndpoint() {
+      const custom = walletRpcEndpoint.value === "custom";
+      customRpcEndpoint.disabled = !custom;
+      customRpcEndpoint.required = custom;
+      if (!custom) {
+        customRpcEndpoint.value = "";
+      }
+    }
+    walletChain.addEventListener("change", updateRpcEndpointOptions);
+    walletRpcEndpoint.addEventListener("change", updateCustomRpcEndpoint);
+    updateRpcEndpointOptions();
+  </script>
 </body>
 </html>`

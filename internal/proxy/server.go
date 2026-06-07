@@ -240,7 +240,7 @@ func payAndRetry(req *http.Request, paymentRequiredHeader string, walletProvider
 		return nil, err
 	}
 
-	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, wallet.PrivateKey)
+	header, txID, err := buildPaymentSignature(req.Context(), challenge, accepted, chain, wallet.PrivateKey, wallet.RpcEndpoint, wallet.RpcToken.String)
 	if err != nil {
 		if recordErr := recordTransaction(req.Context(), transactionRecorder, wallet.ID, challenge.Resource.URL, accepted.Amount, transactionStatusFailedUnknown); recordErr != nil {
 			log.Printf("record failed payment transaction: %v", recordErr)
@@ -389,12 +389,12 @@ func paymentChain(option x402.PaymentOption) (string, bool) {
 	}
 }
 
-func buildPaymentSignature(ctx context.Context, challenge x402.Challenge, accepted x402.PaymentOption, chain string, privateKey string) (string, string, error) {
+func buildPaymentSignature(ctx context.Context, challenge x402.Challenge, accepted x402.PaymentOption, chain string, privateKey string, rpcEndpoint string, rpcToken string) (string, string, error) {
 	switch chain {
 	case wallets.ChainSolana:
-		return pfsolana.BuildPaymentSignature(ctx, challenge, accepted, privateKey)
+		return pfsolana.BuildPaymentSignature(ctx, challenge, accepted, privateKey, rpcEndpoint)
 	case wallets.ChainAlgorand:
-		return algorand.BuildPaymentSignature(challenge, accepted, privateKey)
+		return algorand.BuildPaymentSignature(challenge, accepted, privateKey, rpcEndpoint, rpcToken)
 	default:
 		return "", "", fmt.Errorf("unsupported payment chain %q", chain)
 	}
