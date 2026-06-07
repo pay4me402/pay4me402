@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS user_wallet (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     wallet_id TEXT NOT NULL,
-    limit_amount REAL,
+    monthly_budget REAL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES proxy_users(id) ON DELETE CASCADE,

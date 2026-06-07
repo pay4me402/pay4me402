@@ -27,12 +27,12 @@ type Transaction struct {
 }
 
 type UserWallet struct {
-	ID          string          `json:"id"`
-	UserID      string          `json:"user_id"`
-	WalletID    string          `json:"wallet_id"`
-	LimitAmount sql.NullFloat64 `json:"limit_amount"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	ID            string          `json:"id"`
+	UserID        string          `json:"user_id"`
+	WalletID      string          `json:"wallet_id"`
+	MonthlyBudget sql.NullFloat64 `json:"monthly_budget"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
 type Wallet struct {

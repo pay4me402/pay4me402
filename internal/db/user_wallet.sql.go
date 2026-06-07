@@ -11,16 +11,16 @@ import (
 )
 
 const createUserWallet = `-- name: CreateUserWallet :one
-INSERT INTO user_wallet (id, user_id, wallet_id, limit_amount)
+INSERT INTO user_wallet (id, user_id, wallet_id, monthly_budget)
 VALUES (?, ?, ?, ?)
-RETURNING id, user_id, wallet_id, limit_amount, created_at, updated_at
+RETURNING id, user_id, wallet_id, monthly_budget, created_at, updated_at
 `
 
 type CreateUserWalletParams struct {
-	ID          string          `json:"id"`
-	UserID      string          `json:"user_id"`
-	WalletID    string          `json:"wallet_id"`
-	LimitAmount sql.NullFloat64 `json:"limit_amount"`
+	ID            string          `json:"id"`
+	UserID        string          `json:"user_id"`
+	WalletID      string          `json:"wallet_id"`
+	MonthlyBudget sql.NullFloat64 `json:"monthly_budget"`
 }
 
 func (q *Queries) CreateUserWallet(ctx context.Context, arg CreateUserWalletParams) (UserWallet, error) {
@@ -28,14 +28,14 @@ func (q *Queries) CreateUserWallet(ctx context.Context, arg CreateUserWalletPara
 		arg.ID,
 		arg.UserID,
 		arg.WalletID,
-		arg.LimitAmount,
+		arg.MonthlyBudget,
 	)
 	var i UserWallet
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.WalletID,
-		&i.LimitAmount,
+		&i.MonthlyBudget,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -53,7 +53,7 @@ func (q *Queries) DeleteUserWallet(ctx context.Context, id string) error {
 }
 
 const getUserWallet = `-- name: GetUserWallet :one
-SELECT id, user_id, wallet_id, limit_amount, created_at, updated_at
+SELECT id, user_id, wallet_id, monthly_budget, created_at, updated_at
 FROM user_wallet
 WHERE id = ?
 `
@@ -65,7 +65,7 @@ func (q *Queries) GetUserWallet(ctx context.Context, id string) (UserWallet, err
 		&i.ID,
 		&i.UserID,
 		&i.WalletID,
-		&i.LimitAmount,
+		&i.MonthlyBudget,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -73,7 +73,7 @@ func (q *Queries) GetUserWallet(ctx context.Context, id string) (UserWallet, err
 }
 
 const getUserWalletByUserAndWallet = `-- name: GetUserWalletByUserAndWallet :one
-SELECT id, user_id, wallet_id, limit_amount, created_at, updated_at
+SELECT id, user_id, wallet_id, monthly_budget, created_at, updated_at
 FROM user_wallet
 WHERE user_id = ? AND wallet_id = ?
 `
@@ -90,7 +90,7 @@ func (q *Queries) GetUserWalletByUserAndWallet(ctx context.Context, arg GetUserW
 		&i.ID,
 		&i.UserID,
 		&i.WalletID,
-		&i.LimitAmount,
+		&i.MonthlyBudget,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -98,7 +98,7 @@ func (q *Queries) GetUserWalletByUserAndWallet(ctx context.Context, arg GetUserW
 }
 
 const listUserWallets = `-- name: ListUserWallets :many
-SELECT id, user_id, wallet_id, limit_amount, created_at, updated_at
+SELECT id, user_id, wallet_id, monthly_budget, created_at, updated_at
 FROM user_wallet
 ORDER BY created_at DESC
 `
@@ -116,7 +116,7 @@ func (q *Queries) ListUserWallets(ctx context.Context) ([]UserWallet, error) {
 			&i.ID,
 			&i.UserID,
 			&i.WalletID,
-			&i.LimitAmount,
+			&i.MonthlyBudget,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -134,7 +134,7 @@ func (q *Queries) ListUserWallets(ctx context.Context) ([]UserWallet, error) {
 }
 
 const listUserWalletsByUser = `-- name: ListUserWalletsByUser :many
-SELECT id, user_id, wallet_id, limit_amount, created_at, updated_at
+SELECT id, user_id, wallet_id, monthly_budget, created_at, updated_at
 FROM user_wallet
 WHERE user_id = ?
 ORDER BY created_at DESC
@@ -153,7 +153,7 @@ func (q *Queries) ListUserWalletsByUser(ctx context.Context, userID string) ([]U
 			&i.ID,
 			&i.UserID,
 			&i.WalletID,
-			&i.LimitAmount,
+			&i.MonthlyBudget,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -171,7 +171,7 @@ func (q *Queries) ListUserWalletsByUser(ctx context.Context, userID string) ([]U
 }
 
 const listUserWalletsByWallet = `-- name: ListUserWalletsByWallet :many
-SELECT id, user_id, wallet_id, limit_amount, created_at, updated_at
+SELECT id, user_id, wallet_id, monthly_budget, created_at, updated_at
 FROM user_wallet
 WHERE wallet_id = ?
 ORDER BY created_at DESC
@@ -190,7 +190,7 @@ func (q *Queries) ListUserWalletsByWallet(ctx context.Context, walletID string) 
 			&i.ID,
 			&i.UserID,
 			&i.WalletID,
-			&i.LimitAmount,
+			&i.MonthlyBudget,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -207,26 +207,26 @@ func (q *Queries) ListUserWalletsByWallet(ctx context.Context, walletID string) 
 	return items, nil
 }
 
-const updateUserWalletLimit = `-- name: UpdateUserWalletLimit :one
+const updateUserWalletMonthlyBudget = `-- name: UpdateUserWalletMonthlyBudget :one
 UPDATE user_wallet
-SET limit_amount = ?, updated_at = CURRENT_TIMESTAMP
+SET monthly_budget = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, user_id, wallet_id, limit_amount, created_at, updated_at
+RETURNING id, user_id, wallet_id, monthly_budget, created_at, updated_at
 `
 
-type UpdateUserWalletLimitParams struct {
-	LimitAmount sql.NullFloat64 `json:"limit_amount"`
-	ID          string          `json:"id"`
+type UpdateUserWalletMonthlyBudgetParams struct {
+	MonthlyBudget sql.NullFloat64 `json:"monthly_budget"`
+	ID            string          `json:"id"`
 }
 
-func (q *Queries) UpdateUserWalletLimit(ctx context.Context, arg UpdateUserWalletLimitParams) (UserWallet, error) {
-	row := q.db.QueryRowContext(ctx, updateUserWalletLimit, arg.LimitAmount, arg.ID)
+func (q *Queries) UpdateUserWalletMonthlyBudget(ctx context.Context, arg UpdateUserWalletMonthlyBudgetParams) (UserWallet, error) {
+	row := q.db.QueryRowContext(ctx, updateUserWalletMonthlyBudget, arg.MonthlyBudget, arg.ID)
 	var i UserWallet
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.WalletID,
-		&i.LimitAmount,
+		&i.MonthlyBudget,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -19,7 +19,7 @@ func NewService(queries *db.Queries) *Service {
 	return &Service{queries: queries}
 }
 
-func (s *Service) Assign(ctx context.Context, userID string, walletID string, limit *float64) (db.UserWallet, error) {
+func (s *Service) Assign(ctx context.Context, userID string, walletID string, monthlyBudget *float64) (db.UserWallet, error) {
 	userID = strings.TrimSpace(userID)
 	walletID = strings.TrimSpace(walletID)
 	if userID == "" {
@@ -30,10 +30,10 @@ func (s *Service) Assign(ctx context.Context, userID string, walletID string, li
 	}
 
 	return s.queries.CreateUserWallet(ctx, db.CreateUserWalletParams{
-		ID:          newID(),
-		UserID:      userID,
-		WalletID:    walletID,
-		LimitAmount: nullableLimit(limit),
+		ID:            newID(),
+		UserID:        userID,
+		WalletID:      walletID,
+		MonthlyBudget: nullableMonthlyBudget(monthlyBudget),
 	})
 }
 
@@ -69,14 +69,14 @@ func (s *Service) Get(ctx context.Context, id string) (db.UserWallet, error) {
 	return userWallet, err
 }
 
-func (s *Service) UpdateLimit(ctx context.Context, id string, limit *float64) (db.UserWallet, error) {
+func (s *Service) UpdateMonthlyBudget(ctx context.Context, id string, monthlyBudget *float64) (db.UserWallet, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return db.UserWallet{}, errors.New("user wallet id is required")
 	}
-	return s.queries.UpdateUserWalletLimit(ctx, db.UpdateUserWalletLimitParams{
-		ID:          id,
-		LimitAmount: nullableLimit(limit),
+	return s.queries.UpdateUserWalletMonthlyBudget(ctx, db.UpdateUserWalletMonthlyBudgetParams{
+		ID:            id,
+		MonthlyBudget: nullableMonthlyBudget(monthlyBudget),
 	})
 }
 
@@ -88,11 +88,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.queries.DeleteUserWallet(ctx, id)
 }
 
-func nullableLimit(limit *float64) sql.NullFloat64 {
-	if limit == nil {
+func nullableMonthlyBudget(monthlyBudget *float64) sql.NullFloat64 {
+	if monthlyBudget == nil {
 		return sql.NullFloat64{}
 	}
-	return sql.NullFloat64{Float64: *limit, Valid: true}
+	return sql.NullFloat64{Float64: *monthlyBudget, Valid: true}
 }
 
 func newID() string {
